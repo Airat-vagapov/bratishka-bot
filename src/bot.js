@@ -17,6 +17,7 @@ async function init() {
   }
 
   console.log(`Bratishka bot started: @${botUsername}`);
+  console.log(`DEBUG mode: ${require('./config').debug ? 'ON' : 'OFF'}`);
   return bot;
 }
 
@@ -81,13 +82,20 @@ async function handleObserver(chatId) {
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
 
-  if (!msg.text || msg.from?.is_bot) return;
+  console.log(`[RAW] chat=${chatId} type=${msg.chat.type} from=${msg.from?.username || msg.from?.first_name} text=${JSON.stringify(msg.text)}`);
+
+  if (!msg.text || msg.from?.is_bot) {
+    console.log(`[RAW] skipped: no text or from bot`);
+    return;
+  }
 
   const userDisplayName = msg.from.username || msg.from.first_name;
   const isCommand = msg.text.startsWith('/');
   const isMentioned = botUsername && msg.text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
 
   log(`[Message] ${userDisplayName} in chat ${chatId}: ${msg.text}`);
+  log(`[Debug] botUsername="${botUsername}" isCommand=${isCommand} isMentioned=${isMentioned}`);
+  log(`[Debug] text lowered: "${msg.text.toLowerCase()}" includes "@${botUsername?.toLowerCase()}": ${isMentioned}`);
 
   addMessage(chatId, 'user', msg.text, userDisplayName);
 

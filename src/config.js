@@ -15,7 +15,7 @@ module.exports = {
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
   observerInterval: parseInt(process.env.OBSERVER_INTERVAL || '10', 10),
   maxHistory: parseInt(process.env.MAX_HISTORY || '50', 10),
-  botUsername: process.env.BOT_USERNAME || null,
+  botUsername: process.env.BOT_USERNAME ? process.env.BOT_USERNAME.replace(/^@/, '') : null,
   openRouterReferer: process.env.OPENROUTER_REFERER || '',
   debug: process.env.DEBUG === 'true',
 };
