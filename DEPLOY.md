@@ -67,8 +67,10 @@ cd /root/bratishka-bot
 ## 6. Установи зависимости
 
 ```bash
-npm install --production
+npm install
 ```
+
+> При установке могут появляться предупреждения об устаревших зависимостях (`deprecated`) и уязвимостях. Это нормально для `node-telegram-bot-api`, бот будет работать. Не запускай `npm audit fix --force`, это может сломать зависимости.
 
 ## 7. Создай файл `.env`
 
@@ -161,7 +163,7 @@ pm2 list                            # список всех процессов
 ```bash
 cd /root/bratishka-bot
 git pull
-npm install --production
+npm install
 pm2 restart bratishka-bot
 ```
 

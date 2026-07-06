@@ -30,12 +30,17 @@ async function askAI(messages) {
   }
 
   const data = await response.json();
-  log(`[OpenRouter] Response received`);
+  log(`[OpenRouter] Response received:`, JSON.stringify(data, null, 2));
   if (!data.choices || !data.choices[0] || !data.choices[0].message) {
     throw new Error('Unexpected OpenRouter response format');
   }
 
-  return data.choices[0].message.content.trim();
+  const content = data.choices[0].message.content;
+  if (content === null || content === undefined) {
+    throw new Error('OpenRouter returned null content in response');
+  }
+
+  return content.trim();
 }
 
 module.exports = { askAI };
