@@ -7,13 +7,15 @@ const { log } = require('./logger');
 
 const bot = new TelegramBot(config.telegramToken, { polling: true });
 let botUsername = config.botUsername;
+let botUserId = null;
 
 async function init() {
   loadState();
 
-  if (!botUsername) {
+  if (!botUsername || !botUserId) {
     const me = await bot.getMe();
     botUsername = me.username;
+    botUserId = me.id;
   }
 
   console.log(`Bratishka bot started: @${botUsername}`);
@@ -31,12 +33,9 @@ function buildSystemPrompt(mode = 'default') {
   return `${base} Отвечай на вопросы пользователей кратко, по существу, с юмором в строго корпоративном стиле. Используй контекст предыдущих сообщений, если это уместно.`;
 }
 
-async function handleMention(msg) {
+async function handleDirectMessage(msg, text) {
   const chatId = msg.chat.id;
   const userDisplayName = msg.from.username || msg.from.first_name;
-  const text = msg.text.replace(new RegExp(`@${botUsername}\\b`, 'gi'), '').trim();
-
-  log(`[Mention] Processing question: "${text}"`);
 
   addMessage(chatId, 'user', text, userDisplayName);
 
@@ -47,15 +46,28 @@ async function handleMention(msg) {
 
   try {
     const reply = await askAI(messages);
-    log(`[Mention] AI reply: "${reply.substring(0, 100)}${reply.length > 100 ? '...' : ''}"`);
     await bot.sendMessage(chatId, reply, { reply_to_message_id: msg.message_id });
     addMessage(chatId, 'assistant', reply, botUsername);
   } catch (error) {
-    console.error('Error in handleMention:', error);
+    console.error('Error in handleDirectMessage:', error);
     await bot.sendMessage(chatId, 'Братан, что-то пошло не так. Попробуй позже 🤷‍♂️', {
       reply_to_message_id: msg.message_id,
     });
   }
+}
+
+async function handleMention(msg) {
+  const text = msg.text.replace(new RegExp(`@${botUsername}\\b`, 'gi'), '').trim();
+  log(`[Mention] Processing question: "${text}"`);
+  await handleDirectMessage(msg, text);
+  log(`[Mention] AI reply sent`);
+}
+
+async function handleReply(msg) {
+  const text = msg.text.trim();
+  log(`[Reply] Processing reply: "${text}"`);
+  await handleDirectMessage(msg, text);
+  log(`[Reply] AI reply sent`);
 }
 
 async function handleObserver(chatId) {
@@ -92,10 +104,10 @@ bot.on('message', async (msg) => {
   const userDisplayName = msg.from.username || msg.from.first_name;
   const isCommand = msg.text.startsWith('/');
   const isMentioned = botUsername && msg.text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
+  const isReplyToBot = msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.id === botUserId;
 
   log(`[Message] ${userDisplayName} in chat ${chatId}: ${msg.text}`);
-  log(`[Debug] botUsername="${botUsername}" isCommand=${isCommand} isMentioned=${isMentioned}`);
-  log(`[Debug] text lowered: "${msg.text.toLowerCase()}" includes "@${botUsername?.toLowerCase()}": ${isMentioned}`);
+  log(`[Debug] botUsername="${botUsername}" isCommand=${isCommand} isMentioned=${isMentioned} isReplyToBot=${isReplyToBot}`);
 
   addMessage(chatId, 'user', msg.text, userDisplayName);
 
@@ -130,6 +142,12 @@ bot.on('message', async (msg) => {
   if (isMentioned) {
     log(`[Mention] Bot mentioned by ${userDisplayName}`);
     await handleMention(msg);
+    return;
+  }
+
+  if (isReplyToBot) {
+    log(`[Reply] ${userDisplayName} replied to bot's message`);
+    await handleReply(msg);
     return;
   }
 
