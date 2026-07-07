@@ -41,7 +41,7 @@ async function handleDirectMessage(msg, text) {
 
   const messages = [
     { role: 'system', content: buildSystemPrompt('default') },
-    ...getRecentMessages(chatId, 10),
+    ...getRecentMessages(chatId, config.historyContextLimit),
   ];
 
   try {
@@ -74,7 +74,7 @@ async function handleObserver(chatId) {
   log(`[Observer] Sending last 10 messages to AI for chat ${chatId}`);
   const messages = [
     { role: 'system', content: buildSystemPrompt('observer') },
-    ...getRecentMessages(chatId, 10),
+    ...getRecentMessages(chatId, config.historyContextLimit),
   ];
 
   try {

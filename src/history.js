@@ -1,7 +1,42 @@
+const fs = require('fs');
+const path = require('path');
 const config = require('./config');
+
+const HISTORY_FILE = path.join(__dirname, '..', 'history.json');
 
 /** @type {Map<number, Array<{role: string, content: string, username: string, timestamp: number}>>} */
 const histories = new Map();
+
+function loadHistory() {
+  if (!fs.existsSync(HISTORY_FILE)) {
+    return;
+  }
+
+  try {
+    const data = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+
+    if (data && typeof data === 'object') {
+      for (const [chatIdStr, messages] of Object.entries(data)) {
+        if (Array.isArray(messages)) {
+          histories.set(Number(chatIdStr), messages);
+        }
+      }
+    }
+
+    console.log(`Loaded history for ${histories.size} chat(s) from ${HISTORY_FILE}`);
+  } catch (error) {
+    console.error('Failed to load history file:', error);
+  }
+}
+
+function saveHistory() {
+  try {
+    const data = Object.fromEntries(histories);
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error('Failed to save history file:', error);
+  }
+}
 
 /**
  * Добавляет сообщение в историю чата.
@@ -21,6 +56,8 @@ function addMessage(chatId, role, text, username = '') {
   if (history.length > config.maxHistory) {
     history.shift();
   }
+
+  saveHistory();
 }
 
 /**
@@ -43,6 +80,9 @@ function getRecentMessages(chatId, limit = 10) {
  */
 function clearHistory(chatId) {
   histories.delete(chatId);
+  saveHistory();
 }
+
+loadHistory();
 
 module.exports = { addMessage, getRecentMessages, clearHistory };
