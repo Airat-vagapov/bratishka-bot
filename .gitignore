@@ -4,3 +4,4 @@ observer-state.json
 history.json
 *.log
 .DS_Store
+coverage/

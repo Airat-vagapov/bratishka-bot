@@ -70,7 +70,7 @@ cd /root/bratishka-bot
 npm install
 ```
 
-> При установке могут появляться предупреждения об устаревших зависимостях (`deprecated`) и уязвимостях. Это нормально для `node-telegram-bot-api`, бот будет работать. Не запускай `npm audit fix --force`, это может сломать зависимости.
+> При установке могут появляться предупреждения об устаревших зависимостях. Перед деплоем рекомендуется запустить `npm audit` и устранить критичные уязвимости. Если `npm audit fix --force` ломает работу бота, обнови зависимость вручную и протестируй локально.
 
 ## 7. Создай файл `.env`
 
@@ -85,9 +85,17 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 OPENROUTER_API_KEY=your_openrouter_api_key
 OPENROUTER_MODEL=openai/gpt-4o-mini
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_REQUEST_TIMEOUT=30000
 OBSERVER_INTERVAL=10
-MAX_HISTORY=50
+OBSERVER_CONTEXT_LIMIT=10
+OBSERVER_MIN_INTERVAL_MS=30000
+MAX_HISTORY=200
+HISTORY_CONTEXT_LIMIT=30
+HISTORY_SAVE_INTERVAL_MS=5000
 BOT_USERNAME=
+MAX_MESSAGE_LENGTH=2000
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX_REQUESTS=10
 DEBUG=false
 ```
 

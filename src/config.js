@@ -8,15 +8,27 @@ for (const key of required) {
   }
 }
 
+function parseIntEnv(value, defaultValue) {
+  const parsed = parseInt(value || String(defaultValue), 10);
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
 module.exports = {
   telegramToken: process.env.TELEGRAM_BOT_TOKEN,
   openRouterApiKey: process.env.OPENROUTER_API_KEY,
   openRouterModel: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-  observerInterval: parseInt(process.env.OBSERVER_INTERVAL || '10', 10),
-  maxHistory: parseInt(process.env.MAX_HISTORY || '200', 10),
-  historyContextLimit: parseInt(process.env.HISTORY_CONTEXT_LIMIT || '30', 10),
+  openRouterRequestTimeout: parseIntEnv(process.env.OPENROUTER_REQUEST_TIMEOUT, 30000),
+  observerInterval: parseIntEnv(process.env.OBSERVER_INTERVAL, 10),
+  observerContextLimit: parseIntEnv(process.env.OBSERVER_CONTEXT_LIMIT, 10),
+  observerMinIntervalMs: parseIntEnv(process.env.OBSERVER_MIN_INTERVAL_MS, 30000),
+  maxHistory: parseIntEnv(process.env.MAX_HISTORY, 200),
+  historyContextLimit: parseIntEnv(process.env.HISTORY_CONTEXT_LIMIT, 30),
+  historySaveIntervalMs: parseIntEnv(process.env.HISTORY_SAVE_INTERVAL_MS, 5000),
   botUsername: process.env.BOT_USERNAME ? process.env.BOT_USERNAME.replace(/^@/, '') : null,
   openRouterReferer: process.env.OPENROUTER_REFERER || '',
   debug: process.env.DEBUG === 'true',
+  rateLimitWindowMs: parseIntEnv(process.env.RATE_LIMIT_WINDOW_MS, 60000),
+  rateLimitMaxRequests: parseIntEnv(process.env.RATE_LIMIT_MAX_REQUESTS, 10),
+  maxMessageLength: parseIntEnv(process.env.MAX_MESSAGE_LENGTH, 2000),
 };

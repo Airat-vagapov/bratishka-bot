@@ -6,6 +6,8 @@ const HISTORY_FILE = path.join(__dirname, '..', 'history.json');
 
 /** @type {Map<number, Array<{role: string, content: string, username: string, timestamp: number}>>} */
 const histories = new Map();
+let saveTimeout = null;
+let isSaving = false;
 
 function loadHistory() {
   if (!fs.existsSync(HISTORY_FILE)) {
@@ -29,13 +31,44 @@ function loadHistory() {
   }
 }
 
-function saveHistory() {
+function scheduleSaveHistory() {
+  if (saveTimeout) {
+    return;
+  }
+
+  saveTimeout = setTimeout(() => {
+    saveTimeout = null;
+    flushHistory();
+  }, config.historySaveIntervalMs);
+}
+
+async function flushHistory() {
+  if (isSaving) {
+    scheduleSaveHistory();
+    return;
+  }
+
+  isSaving = true;
   try {
     const data = Object.fromEntries(histories);
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify(data, null, 2));
+    await fs.promises.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
   } catch (error) {
     console.error('Failed to save history file:', error);
+  } finally {
+    isSaving = false;
   }
+}
+
+/**
+ * Сохраняет историю синхронно. Использовать только при graceful shutdown.
+ * @returns {Promise<void>}
+ */
+async function saveHistorySync() {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  await flushHistory();
 }
 
 /**
@@ -51,13 +84,13 @@ function addMessage(chatId, role, text, username = '') {
   }
 
   const history = histories.get(chatId);
-  history.push({ role, content: text, username, timestamp: Date.now() });
+  history.push({ role, content: text, username: role === 'assistant' ? '' : username, timestamp: Date.now() });
 
   if (history.length > config.maxHistory) {
     history.shift();
   }
 
-  saveHistory();
+  scheduleSaveHistory();
 }
 
 /**
@@ -80,9 +113,9 @@ function getRecentMessages(chatId, limit = 10) {
  */
 function clearHistory(chatId) {
   histories.delete(chatId);
-  saveHistory();
+  scheduleSaveHistory();
 }
 
 loadHistory();
 
-module.exports = { addMessage, getRecentMessages, clearHistory };
+module.exports = { addMessage, getRecentMessages, clearHistory, saveHistorySync };

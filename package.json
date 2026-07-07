@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "vitest run",
+    "lint": "eslint src tests"
   },
   "keywords": [
     "telegram",
@@ -20,6 +22,11 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^1.1.2"
+  },
+  "devDependencies": {
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
+    "vitest": "^4.1.10"
   }
 }

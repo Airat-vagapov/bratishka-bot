@@ -5,7 +5,7 @@ Telegram-бот с ИИ-интеграцией через [OpenRouter API](https
 ## Возможности
 
 - **Ответы на упоминания** — тегни бота в чате (`@bratishka_bot что думаешь?`), и он ответит, опираясь на контекст последних сообщений.
-- **Режим активного наблюдателя** — бот следит за перепиской и периодически анализирует последние 10 сообщений. Если у него есть что добавить, он выскажется сам.
+- **Режим активного наблюдателя** — бот следит за перепиской и периодически анализирует контекст. Если у него есть что добавить, он выскажется сам.
 - **Управление режимом** — команды `/observer_on` и `/observer_off` для включения/выключения активного наблюдателя.
 - **Контекст** — бот помнит последние сообщения в чате (количество настраивается).
 
@@ -35,8 +35,16 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 OPENROUTER_API_KEY=your_openrouter_api_key
 OPENROUTER_MODEL=openai/gpt-4o-mini
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_REQUEST_TIMEOUT=30000
 OBSERVER_INTERVAL=10
-MAX_HISTORY=50
+OBSERVER_CONTEXT_LIMIT=10
+OBSERVER_MIN_INTERVAL_MS=30000
+MAX_HISTORY=200
+HISTORY_CONTEXT_LIMIT=30
+HISTORY_SAVE_INTERVAL_MS=5000
+MAX_MESSAGE_LENGTH=2000
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX_REQUESTS=10
 ```
 
 3. Запусти бота:
@@ -73,6 +81,7 @@ npm run dev
 | `/observer_on` | Включить режим активного наблюдателя |
 | `/observer_off` | Выключить режим активного наблюдателя |
 | `/clear` | Очистить историю сообщений в текущем чате |
+| `/help` | Показать справку по командам |
 | `@username ...` | Задать вопрос или попросить мнение у бота |
 | **Ответить на сообщение бота** | Продолжить диалог |
 
@@ -91,7 +100,7 @@ help - Показать справку по командам
 ## Как работает режим наблюдателя
 
 1. После включения (`/observer_on`) бот начинает считать сообщения в чате.
-2. Каждые `OBSERVER_INTERVAL` сообщений (по умолчанию 10) он отправляет в OpenRouter последние 10 сообщений.
+2. Каждые `OBSERVER_INTERVAL` сообщений (по умолчанию 10) он отправляет в OpenRouter последние `OBSERVER_CONTEXT_LIMIT` сообщений (по умолчанию 10).
 3. Модель решает, есть ли смысл вмешиваться. Если да — бот пишет сообщение; если нет, отвечает внутри `SKIP` и молчит.
 
 ## Настройка
@@ -105,7 +114,15 @@ help - Показать справку по командам
 | `OPENROUTER_MODEL` | Модель ИИ | `openai/gpt-4o-mini` |
 | `OPENROUTER_BASE_URL` | Базовый URL OpenRouter API | `https://openrouter.ai/api/v1` |
 | `OBSERVER_INTERVAL` | Через сколько сообщений бот анализирует чат | `10` |
-| `MAX_HISTORY` | Максимальное количество сообщений в памяти на чат | `50` |
+| `OBSERVER_CONTEXT_LIMIT` | Сколько сообщений отправляет observer в AI | `10` |
+| `OBSERVER_MIN_INTERVAL_MS` | Минимальный интервал между observer-запросами в одном чате | `30000` |
+| `MAX_HISTORY` | Максимальное количество сообщений в памяти на чат | `200` |
+| `HISTORY_CONTEXT_LIMIT` | Сколько сообщений отправлять ИИ при упоминании/ответе | `30` |
+| `HISTORY_SAVE_INTERVAL_MS` | Интервал сохранения истории на диск | `5000` |
+| `OPENROUTER_REQUEST_TIMEOUT` | Таймаут запроса к OpenRouter (мс) | `30000` |
+| `MAX_MESSAGE_LENGTH` | Максимальная длина сообщения, отправляемого в AI | `2000` |
+| `RATE_LIMIT_WINDOW_MS` | Окно rate limit (мс) | `60000` |
+| `RATE_LIMIT_MAX_REQUESTS` | Максимальное число AI-запросов от пользователя в окне | `10` |
 | `BOT_USERNAME` | Username бота (опционально, определится автоматически) | — |
 | `DEBUG` | Логирование входящих сообщений и запросов к ИИ | `false` |
 
@@ -119,7 +136,9 @@ bratishka-bot/
 │   ├── config.js      # Конфигурация из .env
 │   ├── openrouter.js  # Клиент OpenRouter API
 │   ├── history.js     # Хранение истории сообщений
-│   └── observer.js    # Состояние режима наблюдателя
+│   ├── observer.js    # Состояние режима наблюдателя
+│   ├── ratelimit.js   # Ограничение частоты запросов
+│   └── utils.js       # Вспомогательные функции
 ├── .env.example
 ├── .gitignore
 ├── package.json

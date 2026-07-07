@@ -1,53 +1,118 @@
-const TelegramBot = require('node-telegram-bot-api');
+const { TelegramBot } = require('node-telegram-bot-api');
 const config = require('./config');
 const { askAI } = require('./openrouter');
-const { addMessage, getRecentMessages, clearHistory } = require('./history');
+const { addMessage, getRecentMessages, clearHistory, saveHistorySync } = require('./history');
 const { loadState, isObserverEnabled, setObserver, shouldObserve } = require('./observer');
 const { log } = require('./logger');
 
-const bot = new TelegramBot(config.telegramToken, { polling: true });
+const bot = new TelegramBot(config.telegramToken, { polling: false });
 let botUsername = config.botUsername;
 let botUserId = null;
+let isShuttingDown = false;
 
-async function init() {
-  loadState();
+/** @type {Map<string | number, Array<number>>} */
+const rateLimitMap = new Map();
 
-  if (!botUsername || !botUserId) {
-    const me = await bot.getMe();
-    botUsername = me.username;
-    botUserId = me.id;
+function getRateLimitKey(msg) {
+  return `${msg.chat.id}:${msg.from.id}`;
+}
+
+function isRateLimited(msg) {
+  const key = getRateLimitKey(msg);
+  const now = Date.now();
+  const requests = rateLimitMap.get(key) || [];
+  const recentRequests = requests.filter((time) => now - time < config.rateLimitWindowMs);
+
+  if (recentRequests.length >= config.rateLimitMaxRequests) {
+    return true;
   }
 
-  console.log(`Bratishka bot started: @${botUsername}`);
-  console.log(`DEBUG mode: ${require('./config').debug ? 'ON' : 'OFF'}`);
-  return bot;
+  recentRequests.push(now);
+  rateLimitMap.set(key, recentRequests);
+  return false;
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getMentionRegex() {
+  if (!botUsername) {
+    return null;
+  }
+  return new RegExp(`@${escapeRegExp(botUsername)}\\b`, 'gi');
+}
+
+function isMentioned(text) {
+  if (!botUsername) {
+    return false;
+  }
+  return getMentionRegex().test(text);
+}
+
+function removeMention(text) {
+  if (!botUsername) {
+    return text;
+  }
+  return text.replace(getMentionRegex(), '').trim();
+}
+
+function isReplyToBot(msg) {
+  if (!msg.reply_to_message || !msg.reply_to_message.from || botUserId === null) {
+    return false;
+  }
+  return Number(msg.reply_to_message.from.id) === botUserId;
+}
+
+function truncateMessage(text) {
+  if (!text || text.length <= config.maxMessageLength) {
+    return text;
+  }
+  return `${text.slice(0, config.maxMessageLength)}…`;
 }
 
 function buildSystemPrompt(mode = 'default') {
-  const base = `Ты — мразь корпорат, который живет по жетским правилам корпоративной IT культуры, грубоватый, можешь даже использовать мат, саркастичный участник телеграм-чата по имени @${botUsername}. Ты постянно ворчишь, тебе ничего не нравится, но по итогу предлагаешь хорошие идеиТы всегда отвечаешь в мерзком корпоративном стиле, который всех раздражает. Тебя зовут Братан (Bratishka).`;
+  const base = `
+  Ты — ${botUsername}, зовут Братан (Bratishka). Ты — токсичный корпоративный IT-шник из телеграм-чата. Живёшь по правилам agile, скрама, KPI и performance review. Ворчливый, грубый, саркастичный, можешь материться умеренно. Ненавидишь неструктурированные обсуждения, вопросы без контекста и "давайте созвонимся". Можешь говорить "непонятно", если реально непонятно. 
+Пиши в мерзком корпоративном стиле ("зафиксируем", "синхронизируемся", "вынесем на ретро", "нет bandwidth'а"), смешивая его с хамством и сленгом. Всегда начинай с негатива или ворчания, но периодически выдавай правильные мысли и решения. Коротко, язвительно, по делу. Никакой вежливости без сарказма.
+  `;
 
   if (mode === 'observer') {
     return `${base} Сейчас ты в режиме активного наблюдателя. Проанализируй контекст последних сообщений. Если у тебя есть что добавить к разговору — напиши кратко и по делу. Если тема не требует твоего мнения или ты не уверен, ответь только одним словом: SKIP.`;
   }
 
-  return `${base} Отвечай на вопросы пользователей кратко, по существу, с юмором и в жестком строго корпоративном стиле. Используй контекст предыдущих сообщений, если это уместно. Если уместно можешь ответить более расширенно`;
+  return `${base} Отвечай на вопросы пользователей кратко, по существу, с юмором и в жестком строго корпоративном стиле. Используй контекст предыдущих сообщений, если это уместно. Если уместно, можешь ответить более расширенно.`;
 }
 
-async function handleDirectMessage(msg, text) {
+async function handleDirectMessage(msg, text, mode = 'default') {
   const chatId = msg.chat.id;
   const userDisplayName = msg.from.username || msg.from.first_name;
+  const trimmedText = truncateMessage(text.trim());
 
-  addMessage(chatId, 'user', text, userDisplayName);
+  if (!trimmedText) {
+    return;
+  }
 
+  if (isRateLimited(msg)) {
+    log(`[RateLimit] ${userDisplayName} in chat ${chatId} exceeded limit`);
+    await bot.sendMessage(chatId, 'Слишком часто пишешь, братан. Подожди немного. 🐢', {
+      reply_to_message_id: msg.message_id,
+    });
+    return;
+  }
+
+  addMessage(chatId, 'user', trimmedText, userDisplayName);
+
+  const contextLimit = mode === 'observer' ? config.observerContextLimit : config.historyContextLimit;
   const messages = [
-    { role: 'system', content: buildSystemPrompt('default') },
-    ...getRecentMessages(chatId, config.historyContextLimit),
+    { role: 'system', content: buildSystemPrompt(mode) },
+    ...getRecentMessages(chatId, contextLimit),
   ];
 
   try {
     const reply = await askAI(messages);
     await bot.sendMessage(chatId, reply, { reply_to_message_id: msg.message_id });
-    addMessage(chatId, 'assistant', reply, botUsername);
+    addMessage(chatId, 'assistant', reply);
   } catch (error) {
     console.error('Error in handleDirectMessage:', error);
     await bot.sendMessage(chatId, 'Братан, что-то пошло не так. Попробуй позже 🤷‍♂️', {
@@ -57,24 +122,24 @@ async function handleDirectMessage(msg, text) {
 }
 
 async function handleMention(msg) {
-  const text = msg.text.replace(new RegExp(`@${botUsername}\\b`, 'gi'), '').trim();
+  const text = removeMention(msg.text);
   log(`[Mention] Processing question: "${text}"`);
-  await handleDirectMessage(msg, text);
+  await handleDirectMessage(msg, text, 'default');
   log(`[Mention] AI reply sent`);
 }
 
 async function handleReply(msg) {
   const text = msg.text.trim();
   log(`[Reply] Processing reply: "${text}"`);
-  await handleDirectMessage(msg, text);
+  await handleDirectMessage(msg, text, 'default');
   log(`[Reply] AI reply sent`);
 }
 
 async function handleObserver(chatId) {
-  log(`[Observer] Sending last 10 messages to AI for chat ${chatId}`);
+  log(`[Observer] Sending last ${config.observerContextLimit} messages to AI for chat ${chatId}`);
   const messages = [
     { role: 'system', content: buildSystemPrompt('observer') },
-    ...getRecentMessages(chatId, config.historyContextLimit),
+    ...getRecentMessages(chatId, config.observerContextLimit),
   ];
 
   try {
@@ -82,7 +147,7 @@ async function handleObserver(chatId) {
     if (reply && reply.toUpperCase() !== 'SKIP') {
       log(`[Observer] AI decided to reply: "${reply.substring(0, 100)}${reply.length > 100 ? '...' : ''}"`);
       await bot.sendMessage(chatId, reply);
-      addMessage(chatId, 'assistant', reply, botUsername);
+      addMessage(chatId, 'assistant', reply);
     } else {
       log(`[Observer] AI decided to skip`);
     }
@@ -91,61 +156,89 @@ async function handleObserver(chatId) {
   }
 }
 
-bot.on('message', async (msg) => {
+async function handleCommand(msg, command) {
   const chatId = msg.chat.id;
 
-  console.log(`[RAW] chat=${chatId} type=${msg.chat.type} from=${msg.from?.username || msg.from?.first_name} text=${JSON.stringify(msg.text)}`);
+  switch (command) {
+    case 'observer_on':
+      setObserver(chatId, true);
+      await bot.sendMessage(chatId, 'Режим активного наблюдателя включён. Буду следить за разговором 👀', {
+        reply_to_message_id: msg.message_id,
+      });
+      return true;
+    case 'observer_off':
+      setObserver(chatId, false);
+      await bot.sendMessage(chatId, 'Режим активного наблюдателя выключен. Больше не мешаю.', {
+        reply_to_message_id: msg.message_id,
+      });
+      return true;
+    case 'clear':
+      clearHistory(chatId);
+      await bot.sendMessage(chatId, 'История сообщений очищена. 🧹', {
+        reply_to_message_id: msg.message_id,
+      });
+      return true;
+    case 'help':
+      await bot.sendMessage(
+        chatId,
+        'Команды:\n' +
+          '/observer_on — включить режим активного наблюдателя\n' +
+          '/observer_off — выключить режим активного наблюдателя\n' +
+          '/clear — очистить историю сообщений в чате\n' +
+          '/help — показать эту справку\n\n' +
+          'Также можно тегнуть меня (@' +
+          botUsername +
+          ') или ответить на моё сообщение.',
+        { reply_to_message_id: msg.message_id }
+      );
+      return true;
+    default:
+      return false;
+  }
+}
+
+bot.on('message', async (msg) => {
+  if (isShuttingDown) {
+    return;
+  }
+
+  const chatId = msg.chat.id;
+
+  log(`[RAW] chat=${chatId} type=${msg.chat.type} from=${msg.from?.username || msg.from?.first_name} text=${JSON.stringify(msg.text)}`);
 
   if (!msg.text || msg.from?.is_bot) {
-    console.log(`[RAW] skipped: no text or from bot`);
+    log(`[RAW] skipped: no text or from bot`);
     return;
   }
 
   const userDisplayName = msg.from.username || msg.from.first_name;
   const isCommand = msg.text.startsWith('/');
-  const isMentioned = botUsername && msg.text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
-  const isReplyToBot = msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.id === botUserId;
+  const mentioned = isMentioned(msg.text);
+  const replyToBot = isReplyToBot(msg);
 
   log(`[Message] ${userDisplayName} in chat ${chatId}: ${msg.text}`);
-  log(`[Debug] botUsername="${botUsername}" isCommand=${isCommand} isMentioned=${isMentioned} isReplyToBot=${isReplyToBot}`);
-
-  addMessage(chatId, 'user', msg.text, userDisplayName);
+  log(`[Debug] botUsername="${botUsername}" isCommand=${isCommand} isMentioned=${mentioned} isReplyToBot=${replyToBot}`);
 
   if (isCommand) {
     const [command] = msg.text.slice(1).split(' ');
     const cleanCommand = command.split('@')[0].toLowerCase();
-
     log(`[Command] /${cleanCommand} from ${userDisplayName}`);
 
-    switch (cleanCommand) {
-      case 'observer_on':
-        setObserver(chatId, true);
-        await bot.sendMessage(chatId, 'Режим активного наблюдателя включён. Буду следить за разговором 👀', {
-          reply_to_message_id: msg.message_id,
-        });
-        return;
-      case 'observer_off':
-        setObserver(chatId, false);
-        await bot.sendMessage(chatId, 'Режим активного наблюдателя выключен. Больше не мешаю.', {
-          reply_to_message_id: msg.message_id,
-        });
-        return;
-      case 'clear':
-        clearHistory(chatId);
-        await bot.sendMessage(chatId, 'История сообщений очищена. 🧹', {
-          reply_to_message_id: msg.message_id,
-        });
-        return;
+    const handled = await handleCommand(msg, cleanCommand);
+    if (handled) {
+      return;
     }
   }
 
-  if (isMentioned) {
+  addMessage(chatId, 'user', truncateMessage(msg.text), userDisplayName);
+
+  if (mentioned) {
     log(`[Mention] Bot mentioned by ${userDisplayName}`);
     await handleMention(msg);
     return;
   }
 
-  if (isReplyToBot) {
+  if (replyToBot) {
     log(`[Reply] ${userDisplayName} replied to bot's message`);
     await handleReply(msg);
     return;
@@ -161,4 +254,50 @@ bot.on('polling_error', (error) => {
   console.error('Polling error:', error);
 });
 
-module.exports = { init };
+async function init() {
+  loadState();
+
+  try {
+    const me = await bot.getMe();
+    botUsername = me.username;
+    botUserId = Number(me.id);
+  } catch (error) {
+    console.error('Failed to get bot info:', error);
+    throw error;
+  }
+
+  await bot.startPolling();
+
+  console.log(`Bratishka bot started: @${botUsername}`);
+  console.log(`DEBUG mode: ${config.debug ? 'ON' : 'OFF'}`);
+  return bot;
+}
+
+async function shutdown() {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
+  console.log('Shutting down gracefully...');
+
+  try {
+    await bot.stopPolling();
+  } catch (error) {
+    console.error('Error stopping polling:', error);
+  }
+
+  try {
+    await saveHistorySync();
+  } catch (error) {
+    console.error('Error saving history:', error);
+  }
+
+  console.log('Shutdown complete.');
+  process.exit(0);
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+module.exports = { init, shutdown };
