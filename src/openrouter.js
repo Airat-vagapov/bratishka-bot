@@ -4,9 +4,11 @@ const { log } = require('./logger');
 /**
  * Отправляет запрос к OpenRouter API и возвращает текст ответа модели.
  * @param {Array<{role: string, content: string}>} messages
+ * @param {Object} [options]
+ * @param {number} [options.temperature=0.8]
  * @returns {Promise<string>}
  */
-async function askAI(messages) {
+async function askAI(messages, options = {}) {
   log(`[OpenRouter] Request to model: ${config.openRouterModel}, messages: ${messages.length}`);
 
   const controller = new AbortController();
@@ -24,7 +26,7 @@ async function askAI(messages) {
       body: JSON.stringify({
         model: config.openRouterModel,
         messages,
-        temperature: 0.8,
+        temperature: options.temperature ?? 0.8,
         max_tokens: config.openRouterMaxTokens,
       }),
       signal: controller.signal,
