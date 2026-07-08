@@ -108,6 +108,37 @@ function getRecentMessages(chatId, limit = 10) {
 }
 
 /**
+ * Возвращает последние сообщения конкретного пользователя в формате, подходящем для OpenRouter API.
+ * Сравнение по username нечувствительно к регистру и символу @ в начале.
+ * @param {number} chatId
+ * @param {string} username
+ * @param {number} [limit=10]
+ * @returns {Array<{role: string, content: string}>}
+ */
+function getMessagesByUser(chatId, username, limit = 10) {
+  if (!username) {
+    return [];
+  }
+
+  const normalizedTarget = username.replace(/^@/, '').toLowerCase();
+  const history = histories.get(chatId) || [];
+
+  return history
+    .filter((message) => {
+      if (!message.username) {
+        return false;
+      }
+      const normalizedSource = message.username.replace(/^@/, '').toLowerCase();
+      return normalizedSource === normalizedTarget;
+    })
+    .slice(-limit)
+    .map((message) => ({
+      role: message.role,
+      content: `${message.username}: ${message.content}`,
+    }));
+}
+
+/**
  * Очищает историю сообщений для чата.
  * @param {number} chatId
  */
@@ -118,4 +149,4 @@ function clearHistory(chatId) {
 
 loadHistory();
 
-module.exports = { addMessage, getRecentMessages, clearHistory, saveHistorySync };
+module.exports = { addMessage, getRecentMessages, getMessagesByUser, clearHistory, saveHistorySync };

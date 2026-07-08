@@ -9,7 +9,7 @@ vi.mock('fs', () => ({
   },
 }));
 
-import { addMessage, getRecentMessages, clearHistory, saveHistorySync } from '../src/history.js';
+import { addMessage, getRecentMessages, getMessagesByUser, clearHistory, saveHistorySync } from '../src/history.js';
 
 describe('history', () => {
   beforeEach(() => {
@@ -52,5 +52,51 @@ describe('history', () => {
   it('saves history synchronously', async () => {
     addMessage(1, 'user', 'hello', 'u');
     await saveHistorySync();
+  });
+
+  describe('getMessagesByUser', () => {
+    it('returns messages for a specific user', () => {
+      addMessage(1, 'user', 'hello', 'alice');
+      addMessage(1, 'user', 'hi', 'bob');
+      addMessage(1, 'user', 'world', 'alice');
+
+      const messages = getMessagesByUser(1, 'alice', 10);
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'alice: hello' });
+      expect(messages[1]).toEqual({ role: 'user', content: 'alice: world' });
+    });
+
+    it('ignores leading @ in username', () => {
+      addMessage(1, 'user', 'hello', 'alice');
+      const messages = getMessagesByUser(1, '@alice', 10);
+      expect(messages).toHaveLength(1);
+    });
+
+    it('is case-insensitive', () => {
+      addMessage(1, 'user', 'hello', 'Alice');
+      const messages = getMessagesByUser(1, 'ALICE', 10);
+      expect(messages).toHaveLength(1);
+    });
+
+    it('limits messages by parameter', () => {
+      addMessage(1, 'user', 'a', 'alice');
+      addMessage(1, 'user', 'b', 'alice');
+      addMessage(1, 'user', 'c', 'alice');
+
+      const messages = getMessagesByUser(1, 'alice', 2);
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'alice: b' });
+      expect(messages[1]).toEqual({ role: 'user', content: 'alice: c' });
+    });
+
+    it('returns empty array if user has no messages', () => {
+      addMessage(1, 'user', 'hello', 'bob');
+      expect(getMessagesByUser(1, 'alice', 10)).toHaveLength(0);
+    });
+
+    it('returns empty array for empty username', () => {
+      addMessage(1, 'user', 'hello', 'alice');
+      expect(getMessagesByUser(1, '', 10)).toHaveLength(0);
+    });
   });
 });

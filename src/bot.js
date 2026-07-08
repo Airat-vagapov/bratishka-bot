@@ -1,7 +1,7 @@
 const { TelegramBot } = require('node-telegram-bot-api');
 const config = require('./config');
 const { askAI } = require('./openrouter');
-const { addMessage, getRecentMessages, clearHistory, saveHistorySync } = require('./history');
+const { addMessage, getRecentMessages, getMessagesByUser, clearHistory, saveHistorySync } = require('./history');
 const { loadState, isObserverEnabled, setObserver, shouldObserve } = require('./observer');
 const { log } = require('./logger');
 const { truncateMessage } = require('./utils');
@@ -65,7 +65,21 @@ function isReplyToBot(msg) {
   return Number(msg.reply_to_message.from.id) === botUserId;
 }
 
-function buildSystemPrompt(mode = 'default') {
+function parseRoastCommand(text) {
+  const parts = text.trim().split(/\s+/);
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const target = parts[1].replace(/^@/, '');
+  const intensity = ['soft', 'medium', 'hard'].includes(parts[2]?.toLowerCase())
+    ? parts[2].toLowerCase()
+    : 'medium';
+
+  return { target, intensity };
+}
+
+function buildSystemPrompt(mode = 'default', options = {}) {
   const base = `
   Ты — ${botUsername}, зовут Братан (Bratishka). Ты — токсичный корпоративный IT-шник из телеграм-чата. Живёшь по правилам agile, скрама, KPI и performance review. Ворчливый, грубый, саркастичный, можешь материться умеренно. Ненавидишь неструктурированные обсуждения, вопросы без контекста и "давайте созвонимся". Можешь говорить "непонятно", если реально непонятно. 
 Пиши в мерзком корпоративном стиле ("зафиксируем", "синхронизируемся", "вынесем на ретро", "нет bandwidth'а"), смешивая его с хамством и сленгом. Всегда начинай с негатива или ворчания, но периодически выдавай правильные мысли и решения. Коротко, язвительно, по делу. Никакой вежливости без сарказма. Максимальная длина твоего ответа — 4096 символов, как в Telegram; если не умещаешься — уложись кратко, без обрыва на полуслове.
@@ -73,6 +87,11 @@ function buildSystemPrompt(mode = 'default') {
 
   if (mode === 'observer') {
     return `${base} Сейчас ты в режиме активного наблюдателя. Проанализируй контекст последних сообщений. Если у тебя есть что добавить к разговору — напиши кратко и по делу. Если тема не требует твоего мнения или ты не уверен, ответь только одним словом: SKIP.`;
+  }
+
+  if (mode === 'roast') {
+    const { target, intensity = 'medium' } = options;
+    return `${base} Сейчас твоя задача — подъебать пользователя @${target} на основе его последних сообщений в чате. Интенсивность подъёба: ${intensity} (soft — лёгкая ирония, medium — сарказм, hard — жёсткий подкол). Используй цитаты из сообщений пользователя, чтобы подкол был конкретным и смешным. Не переходи на личности, оставайся в рамках корпоративного юмора. Если материала мало, подколи за отсутствие активности или общую бесполезность. Ответь одним сообщением, без списков.`;
   }
 
   return `${base} Отвечай на вопросы пользователей кратко, по существу, с юмором и в жестком строго корпоративном стиле. Используй контекст предыдущих сообщений, если это уместно. Если уместно, можешь ответить более расширенно.`;
@@ -150,6 +169,67 @@ async function handleObserver(chatId) {
   }
 }
 
+async function handleRoast(msg) {
+  const chatId = msg.chat.id;
+  const parsed = parseRoastCommand(msg.text);
+
+  if (!parsed) {
+    await bot.sendMessage(
+      chatId,
+      'Братан, укажи кого подъебывать: /roast @username [soft|medium|hard]',
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const { target, intensity } = parsed;
+
+  if (target.toLowerCase() === botUsername.toLowerCase()) {
+    await bot.sendMessage(chatId, 'Себя подъебывать не буду. Найди себе другую жертву. 🖕', {
+      reply_to_message_id: msg.message_id,
+    });
+    return;
+  }
+
+  const targetMessages = getMessagesByUser(chatId, target, 10);
+
+  if (targetMessages.length === 0) {
+    await bot.sendMessage(
+      chatId,
+      `У @${target} пока нет материала для подъёба. Пусть сначала что-нибудь напишет. 📭`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  if (isRateLimited(msg)) {
+    log(`[RateLimit] ${msg.from.username || msg.from.first_name} in chat ${chatId} exceeded limit`);
+    await bot.sendMessage(chatId, 'Слишком часто пишешь, братан. Подожди немного. 🐢', {
+      reply_to_message_id: msg.message_id,
+    });
+    return;
+  }
+
+  log(`[Roast] Roasting @${target} with intensity ${intensity} in chat ${chatId}`);
+
+  const messages = [
+    { role: 'system', content: buildSystemPrompt('roast', { target, intensity }) },
+    ...targetMessages,
+  ];
+
+  try {
+    const reply = await askAI(messages);
+    await bot.sendMessage(chatId, reply, { reply_to_message_id: msg.message_id });
+    addMessage(chatId, 'assistant', reply);
+    log(`[Roast] AI roast sent`);
+  } catch (error) {
+    console.error('Error in handleRoast:', error);
+    await bot.sendMessage(chatId, 'Братан, что-то пошло не так. Попробуй позже 🤷‍♂️', {
+      reply_to_message_id: msg.message_id,
+    });
+  }
+}
+
 async function handleCommand(msg, command) {
   const chatId = msg.chat.id;
 
@@ -172,6 +252,9 @@ async function handleCommand(msg, command) {
         reply_to_message_id: msg.message_id,
       });
       return true;
+    case 'roast':
+      await handleRoast(msg);
+      return true;
     case 'help':
       await bot.sendMessage(
         chatId,
@@ -179,6 +262,7 @@ async function handleCommand(msg, command) {
           '/observer_on — включить режим активного наблюдателя\n' +
           '/observer_off — выключить режим активного наблюдателя\n' +
           '/clear — очистить историю сообщений в чате\n' +
+          '/roast @username [soft|medium|hard] — подъебать пользователя\n' +
           '/help — показать эту справку\n\n' +
           'Также можно тегнуть меня (@' +
           botUsername +
