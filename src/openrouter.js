@@ -25,7 +25,7 @@ async function askAI(messages) {
         model: config.openRouterModel,
         messages,
         temperature: 0.8,
-        max_tokens: 500,
+        max_tokens: config.openRouterMaxTokens,
       }),
       signal: controller.signal,
     });

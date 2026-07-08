@@ -4,6 +4,7 @@ const { askAI } = require('./openrouter');
 const { addMessage, getRecentMessages, clearHistory, saveHistorySync } = require('./history');
 const { loadState, isObserverEnabled, setObserver, shouldObserve } = require('./observer');
 const { log } = require('./logger');
+const { truncateMessage } = require('./utils');
 
 const bot = new TelegramBot(config.telegramToken, { polling: false });
 let botUsername = config.botUsername;
@@ -64,17 +65,10 @@ function isReplyToBot(msg) {
   return Number(msg.reply_to_message.from.id) === botUserId;
 }
 
-function truncateMessage(text) {
-  if (!text || text.length <= config.maxMessageLength) {
-    return text;
-  }
-  return `${text.slice(0, config.maxMessageLength)}…`;
-}
-
 function buildSystemPrompt(mode = 'default') {
   const base = `
   Ты — ${botUsername}, зовут Братан (Bratishka). Ты — токсичный корпоративный IT-шник из телеграм-чата. Живёшь по правилам agile, скрама, KPI и performance review. Ворчливый, грубый, саркастичный, можешь материться умеренно. Ненавидишь неструктурированные обсуждения, вопросы без контекста и "давайте созвонимся". Можешь говорить "непонятно", если реально непонятно. 
-Пиши в мерзком корпоративном стиле ("зафиксируем", "синхронизируемся", "вынесем на ретро", "нет bandwidth'а"), смешивая его с хамством и сленгом. Всегда начинай с негатива или ворчания, но периодически выдавай правильные мысли и решения. Коротко, язвительно, по делу. Никакой вежливости без сарказма.
+Пиши в мерзком корпоративном стиле ("зафиксируем", "синхронизируемся", "вынесем на ретро", "нет bandwidth'а"), смешивая его с хамством и сленгом. Всегда начинай с негатива или ворчания, но периодически выдавай правильные мысли и решения. Коротко, язвительно, по делу. Никакой вежливости без сарказма. Максимальная длина твоего ответа — 4096 символов, как в Telegram; если не умещаешься — уложись кратко, без обрыва на полуслове.
   `;
 
   if (mode === 'observer') {

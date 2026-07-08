@@ -42,7 +42,8 @@ OBSERVER_MIN_INTERVAL_MS=30000
 MAX_HISTORY=200
 HISTORY_CONTEXT_LIMIT=30
 HISTORY_SAVE_INTERVAL_MS=5000
-MAX_MESSAGE_LENGTH=2000
+MAX_MESSAGE_LENGTH=4096
+OPENROUTER_MAX_TOKENS=4096
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=10
 ```
@@ -120,7 +121,8 @@ help - Показать справку по командам
 | `HISTORY_CONTEXT_LIMIT` | Сколько сообщений отправлять ИИ при упоминании/ответе | `30` |
 | `HISTORY_SAVE_INTERVAL_MS` | Интервал сохранения истории на диск | `5000` |
 | `OPENROUTER_REQUEST_TIMEOUT` | Таймаут запроса к OpenRouter (мс) | `30000` |
-| `MAX_MESSAGE_LENGTH` | Максимальная длина сообщения, отправляемого в AI | `2000` |
+| `MAX_MESSAGE_LENGTH` | Максимальная длина сообщения в Telegram (обрезает входящие и исходящие) | `4096` |
+| `OPENROUTER_MAX_TOKENS` | Максимальное число токенов в ответе AI | `4096` |
 | `RATE_LIMIT_WINDOW_MS` | Окно rate limit (мс) | `60000` |
 | `RATE_LIMIT_MAX_REQUESTS` | Максимальное число AI-запросов от пользователя в окне | `10` |
 | `BOT_USERNAME` | Username бота (опционально, определится автоматически) | — |
