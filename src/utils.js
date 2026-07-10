@@ -49,6 +49,19 @@ function sanitizeUsername(username) {
 }
 
 /**
+ * Убирает из ответа ИИ markdown-выделение двойными звёздочками,
+ * которое Telegram показывает как текст вместо жирного шрифта.
+ * @param {string} text
+ * @returns {string}
+ */
+function sanitizeAnswer(text) {
+  if (typeof text !== 'string') {
+    return text;
+  }
+  return text.replace(/\*\*(.*?)\*\*/g, '$1');
+}
+
+/**
  * Преобразует массив content (текст + изображение) в строку для истории.
  * @param {string | Array<{type: string, text?: string}>} content
  * @returns {string}
@@ -85,4 +98,5 @@ module.exports = {
   truncateMessage,
   sanitizeUsername,
   formatContentForHistory,
+  sanitizeAnswer,
 };

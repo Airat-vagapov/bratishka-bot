@@ -7,6 +7,7 @@ import {
   truncateMessage,
   sanitizeUsername,
   formatContentForHistory,
+  sanitizeAnswer,
 } from '../src/utils.js';
 
 describe('utils', () => {
@@ -78,6 +79,26 @@ describe('utils', () => {
     it('removes newlines and limits length', () => {
       expect(sanitizeUsername('user\nname')).toBe('username');
       expect(sanitizeUsername('a'.repeat(100))).toBe('a'.repeat(64));
+    });
+  });
+
+  describe('sanitizeAnswer', () => {
+    it('removes paired double asterisks', () => {
+      expect(sanitizeAnswer('**привет** мир')).toBe('привет мир');
+      expect(sanitizeAnswer('это **важно**')).toBe('это важно');
+    });
+
+    it('handles multiple bold fragments', () => {
+      expect(sanitizeAnswer('**a** и **b**')).toBe('a и b');
+    });
+
+    it('leaves single asterisks untouched', () => {
+      expect(sanitizeAnswer('*привет*')).toBe('*привет*');
+    });
+
+    it('returns non-string values as is', () => {
+      expect(sanitizeAnswer(null)).toBe(null);
+      expect(sanitizeAnswer(undefined)).toBe(undefined);
     });
   });
 
