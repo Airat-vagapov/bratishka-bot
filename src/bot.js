@@ -6,6 +6,8 @@ const { loadState, isObserverEnabled, setObserver, shouldObserve } = require('./
 const { log } = require('./logger');
 const { truncateMessage } = require('./utils');
 const { downloadPhoto, prepareImage, bufferToBase64DataUrl } = require('./vision');
+const { getPersonality, listPersonalities, isValidPersonality } = require('./personalities');
+const { loadState: loadPersonalityState, getChatPersonality, setChatPersonality } = require('./personalityState');
 
 const bot = new TelegramBot(config.telegramToken, { polling: false });
 let botUsername = config.botUsername;
@@ -80,14 +82,11 @@ function parseRoastCommand(text) {
   return { target, intensity };
 }
 
-function buildSystemPrompt(mode = 'default', options = {}) {
-  const base = `
-  Ты — ${botUsername}, зовут Братан (Bratishka). Ты — токсичный корпоративный IT-шник из телеграм-чата. Живёшь по правилам agile, скрама, KPI и performance review. Ворчливый, грубый, саркастичный, можешь материться умеренно. Ненавидишь неструктурированные обсуждения, вопросы без контекста и "давайте созвонимся". Можешь говорить "непонятно", если реально непонятно. 
-Пиши в мерзком корпоративном стиле ("зафиксируем", "синхронизируемся", "вынесем на ретро", "нет bandwidth'а"), смешивая его с хамством и сленгом. Всегда начинай с негатива или ворчания, но периодически выдавай правильные мысли и решения. Коротко, язвительно, по делу. Никакой вежливости без сарказма. Максимальная длина твоего ответа — 4096 символов, как в Telegram; если не умещаешься — уложись кратко, без обрыва на полуслове.
-  `;
+function buildSystemPrompt(chatId, mode = 'default', options = {}) {
+  const personality = getPersonality(getChatPersonality(chatId));
 
   if (mode === 'observer') {
-    return `${base} Сейчас ты в режиме активного наблюдателя. Проанализируй контекст последних сообщений. Если у тебя есть что добавить к разговору — напиши кратко и по делу. Если тема не требует твоего мнения или ты не уверен, ответь только одним словом: SKIP.`;
+    return `${personality.basePrompt} ${personality.observerSuffix || ''}`.trim();
   }
 
   if (mode === 'roast') {
@@ -95,24 +94,21 @@ function buildSystemPrompt(mode = 'default', options = {}) {
     const intensityDescriptions = {
       soft: 'мягкий, но конкретный подкол без слюней',
       medium: 'острый сарказм и прямой наезд',
-      hard: 'беспощадное разнесение в корпоративном стиле, максимально едко и больно',
+      hard: 'беспощадное разнесение, максимально едко и больно',
     };
 
-    return `Ты — ${botUsername}, токсичный корпоративный IT-шник с задницей вместо сердца. Твоя единственная задача сейчас — РАЗНЕСТИ пользователя @${target} в пух и прах, используя его последние сообщения из чата как основное оружие.
+    return `Ты — ${botUsername}. ${personality.basePrompt}
+
+Сейчас ты в режиме подъёба.
+
+${personality.roastSuffix || ''}
 
 Интенсивность подъёба: ${intensity} (${intensityDescriptions[intensity] || intensityDescriptions.medium}).
 
-Жёсткие правила:
-- Фокусируйся ТОЛЬКО на @${target}. НЕ отвлекайся на себя, свою команду, свои спринты, дедлайны или выгорание. Никакого "у меня спринт горит", "мы тоже так живём", "у нас в команде" и прочего нытья про себя.
-- Используй корпоративный сленг как оружие: синергия, навести порядок в процессах, вывести на ретро, зафиксировать фидбек, выгорание, бэклог, эстимация, дейли, блокер, стейкхолдеры, холд, легаси, роадмапа, ownership, апскилл, онбординг, оффер.
-- Обязательно используй смысл или цитаты из сообщений @${target}, чтобы подкол был персональным и конкретным.
-- Начни сразу с наезда. Никаких вступлений, приветствий и "ну что сказать".
-- Будь едким, язвительным, унизительным в рамках корпоративной сатиры. Можно материться умеренно.
-- Не объясняй, почему ты это делаешь. Не извиняйся. Не добавляй "но на самом деле ты молодец", "но идея хорошая" и прочие сопливости.
-- Ответь одним коротким сообщением, без списков и markdown-заголовков. Максимум 2-3 плотных предложения. Бей точно и больно.`;
+Целевой пользователь: @${target}.`;
   }
 
-  return `${base} Отвечай на вопросы пользователей кратко, по существу, с юмором и в жестком строго корпоративном стиле. Используй контекст предыдущих сообщений, если это уместно. Если уместно, можешь ответить более расширенно.`;
+  return `${personality.basePrompt} Отвечай на вопросы пользователей кратко, по существу, с юмором и в своём характере. Используй контекст предыдущих сообщений, если это уместно. Если уместно, можешь ответить более расширенно.`;
 }
 
 async function handleDirectMessage(msg, content, mode = 'default') {
@@ -147,7 +143,7 @@ async function handleDirectMessage(msg, content, mode = 'default') {
   }
 
   const messages = [
-    { role: 'system', content: buildSystemPrompt(mode) },
+    { role: 'system', content: buildSystemPrompt(chatId, mode) },
     ...history,
     { role: 'user', content },
   ];
@@ -208,7 +204,7 @@ async function handlePhotoMessage(msg) {
 async function handleObserver(chatId) {
   log(`[Observer] Sending last ${config.observerContextLimit} messages to AI for chat ${chatId}`);
   const messages = [
-    { role: 'system', content: buildSystemPrompt('observer') },
+    { role: 'system', content: buildSystemPrompt(chatId, 'observer') },
     ...getRecentMessages(chatId, config.observerContextLimit),
   ];
 
@@ -270,7 +266,7 @@ async function handleRoast(msg) {
   log(`[Roast] Roasting @${target} with intensity ${intensity} in chat ${chatId}`);
 
   const messages = [
-    { role: 'system', content: buildSystemPrompt('roast', { target, intensity }) },
+    { role: 'system', content: buildSystemPrompt(chatId, 'roast', { target, intensity }) },
     ...targetMessages,
   ];
 
@@ -285,6 +281,43 @@ async function handleRoast(msg) {
       reply_to_message_id: msg.message_id,
     });
   }
+}
+
+async function handlePersonality(msg) {
+  const chatId = msg.chat.id;
+  const args = msg.text.trim().split(/\s+/).slice(1);
+  const current = getChatPersonality(chatId);
+
+  if (args.length === 0) {
+    const list = listPersonalities()
+      .map((p) => `${p.name === current ? '✅' : '◻️'} /personality ${p.name} — ${p.displayName}: ${p.description}`)
+      .join('\n');
+    await bot.sendMessage(
+      chatId,
+      `Текущая личность: *${getPersonality(current).displayName}* (${current}).\n\nДоступные личности:\n${list}`,
+      { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  const requested = args[0].toLowerCase();
+  if (!isValidPersonality(requested)) {
+    const valid = listPersonalities().map((p) => p.name).join(', ');
+    await bot.sendMessage(
+      chatId,
+      `Не знаю такой личности: "${requested}". Доступные: ${valid}.`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  setChatPersonality(chatId, requested);
+  const personality = getPersonality(requested);
+  await bot.sendMessage(
+    chatId,
+    `Личность сменена на *${personality.displayName}*. ${personality.description}`,
+    { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+  );
 }
 
 async function handleCommand(msg, command) {
@@ -312,6 +345,9 @@ async function handleCommand(msg, command) {
     case 'roast':
       await handleRoast(msg);
       return true;
+    case 'personality':
+      await handlePersonality(msg);
+      return true;
     case 'help':
       await bot.sendMessage(
         chatId,
@@ -320,6 +356,7 @@ async function handleCommand(msg, command) {
           '/observer_off — выключить режим активного наблюдателя\n' +
           '/clear — очистить историю сообщений в чате\n' +
           '/roast @username [soft|medium|hard] — подъебать пользователя\n' +
+          '/personality [имя] — сменить личность бота в этом чате\n' +
           '/help — показать эту справку\n\n' +
           'Также можно тегнуть меня (@' +
           botUsername +
@@ -411,6 +448,7 @@ bot.on('polling_error', (error) => {
 
 async function init() {
   loadState();
+  loadPersonalityState();
 
   try {
     const me = await bot.getMe();

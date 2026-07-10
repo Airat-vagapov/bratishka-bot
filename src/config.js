@@ -26,6 +26,7 @@ module.exports = {
   historyContextLimit: parseIntEnv(process.env.HISTORY_CONTEXT_LIMIT, 30),
   historySaveIntervalMs: parseIntEnv(process.env.HISTORY_SAVE_INTERVAL_MS, 5000),
   botUsername: process.env.BOT_USERNAME ? process.env.BOT_USERNAME.replace(/^@/, '') : null,
+  botPersonality: (process.env.BOT_PERSONALITY || 'bratishka').toLowerCase(),
   openRouterReferer: process.env.OPENROUTER_REFERER || '',
   debug: process.env.DEBUG === 'true',
   rateLimitWindowMs: parseIntEnv(process.env.RATE_LIMIT_WINDOW_MS, 60000),
