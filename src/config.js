@@ -32,4 +32,6 @@ module.exports = {
   rateLimitMaxRequests: parseIntEnv(process.env.RATE_LIMIT_MAX_REQUESTS, 10),
   maxMessageLength: parseIntEnv(process.env.MAX_MESSAGE_LENGTH, 4096),
   openRouterMaxTokens: parseIntEnv(process.env.OPENROUTER_MAX_TOKENS, 4096),
+  visionMaxImageSize: parseIntEnv(process.env.VISION_MAX_IMAGE_SIZE, 1024),
+  visionJpegQuality: parseIntEnv(process.env.VISION_JPEG_QUALITY, 80),
 };

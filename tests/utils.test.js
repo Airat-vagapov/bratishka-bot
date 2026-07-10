@@ -6,6 +6,7 @@ import {
   isReplyToBot,
   truncateMessage,
   sanitizeUsername,
+  formatContentForHistory,
 } from '../src/utils.js';
 
 describe('utils', () => {
@@ -77,6 +78,33 @@ describe('utils', () => {
     it('removes newlines and limits length', () => {
       expect(sanitizeUsername('user\nname')).toBe('username');
       expect(sanitizeUsername('a'.repeat(100))).toBe('a'.repeat(64));
+    });
+  });
+
+  describe('formatContentForHistory', () => {
+    it('returns string content as is', () => {
+      expect(formatContentForHistory('hello')).toBe('hello');
+    });
+
+    it('formats image content with text', () => {
+      const content = [
+        { type: 'text', text: 'Что здесь?' },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,abc' } },
+      ];
+      expect(formatContentForHistory(content)).toBe('[image] Что здесь?');
+    });
+
+    it('formats image content without text', () => {
+      const content = [{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,abc' } }];
+      expect(formatContentForHistory(content)).toBe('[image]');
+    });
+
+    it('joins multiple text parts', () => {
+      const content = [
+        { type: 'text', text: 'first' },
+        { type: 'text', text: 'second' },
+      ];
+      expect(formatContentForHistory(content)).toBe('first second');
     });
   });
 });

@@ -49,6 +49,15 @@ describe('history', () => {
     expect(getRecentMessages(1, 10)).toHaveLength(0);
   });
 
+  it('stores image content as [image] placeholder', () => {
+    addMessage(1, 'user', [
+      { type: 'text', text: 'Что на фото?' },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,abc' } },
+    ], 'u');
+    const recent = getRecentMessages(1, 10);
+    expect(recent[0]).toEqual({ role: 'user', content: 'u: [image] Что на фото?' });
+  });
+
   it('saves history synchronously', async () => {
     addMessage(1, 'user', 'hello', 'u');
     await saveHistorySync();

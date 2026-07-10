@@ -5,6 +5,7 @@ const { addMessage, getRecentMessages, getMessagesByUser, clearHistory, saveHist
 const { loadState, isObserverEnabled, setObserver, shouldObserve } = require('./observer');
 const { log } = require('./logger');
 const { truncateMessage } = require('./utils');
+const { downloadPhoto, prepareImage, bufferToBase64DataUrl } = require('./vision');
 
 const bot = new TelegramBot(config.telegramToken, { polling: false });
 let botUsername = config.botUsername;
@@ -114,12 +115,15 @@ function buildSystemPrompt(mode = 'default', options = {}) {
   return `${base} Отвечай на вопросы пользователей кратко, по существу, с юмором и в жестком строго корпоративном стиле. Используй контекст предыдущих сообщений, если это уместно. Если уместно, можешь ответить более расширенно.`;
 }
 
-async function handleDirectMessage(msg, text, mode = 'default') {
+async function handleDirectMessage(msg, content, mode = 'default') {
   const chatId = msg.chat.id;
   const userDisplayName = msg.from.username || msg.from.first_name;
-  const trimmedText = truncateMessage(text.trim());
+  const isArrayContent = Array.isArray(content);
+  const textPreview = isArrayContent
+    ? content.filter((part) => part.type === 'text').map((part) => part.text).join(' ')
+    : truncateMessage(content.trim());
 
-  if (!trimmedText) {
+  if (!isArrayContent && !textPreview) {
     return;
   }
 
@@ -131,12 +135,21 @@ async function handleDirectMessage(msg, text, mode = 'default') {
     return;
   }
 
-  addMessage(chatId, 'user', trimmedText, userDisplayName);
+  addMessage(chatId, 'user', content, userDisplayName);
 
   const contextLimit = mode === 'observer' ? config.observerContextLimit : config.historyContextLimit;
+  const history = getRecentMessages(chatId, contextLimit);
+
+  // Убираем только что добавленное сообщение, так как оно сохранено в виде строки,
+  // а для multimodal-запросов нужен оригинальный content (массив).
+  if (history.length > 0 && history[history.length - 1].role === 'user') {
+    history.pop();
+  }
+
   const messages = [
     { role: 'system', content: buildSystemPrompt(mode) },
-    ...getRecentMessages(chatId, contextLimit),
+    ...history,
+    { role: 'user', content },
   ];
 
   try {
@@ -152,17 +165,44 @@ async function handleDirectMessage(msg, text, mode = 'default') {
 }
 
 async function handleMention(msg) {
-  const text = removeMention(msg.text);
+  const text = removeMention(msg.text || msg.caption || '');
   log(`[Mention] Processing question: "${text}"`);
   await handleDirectMessage(msg, text, 'default');
   log(`[Mention] AI reply sent`);
 }
 
 async function handleReply(msg) {
-  const text = msg.text.trim();
+  const text = (msg.text || msg.caption || '').trim();
   log(`[Reply] Processing reply: "${text}"`);
   await handleDirectMessage(msg, text, 'default');
   log(`[Reply] AI reply sent`);
+}
+
+async function handlePhotoMessage(msg) {
+  const chatId = msg.chat.id;
+  const caption = msg.caption || '';
+  const text = removeMention(caption);
+
+  try {
+    const photo = msg.photo[msg.photo.length - 1];
+    log(`[Photo] Downloading file_id=${photo.file_id} for chat ${chatId}`);
+    const buffer = await downloadPhoto(photo.file_id, bot.getFileLink.bind(bot));
+    const prepared = await prepareImage(buffer);
+    const dataUrl = bufferToBase64DataUrl(prepared);
+
+    const content = [
+      { type: 'text', text: text || 'Опиши, что на картинке.' },
+      { type: 'image_url', image_url: { url: dataUrl } },
+    ];
+
+    log(`[Photo] Prepared image for chat ${chatId}, size=${prepared.length}`);
+    await handleDirectMessage(msg, content, 'default');
+  } catch (error) {
+    console.error('Error in handlePhotoMessage:', error);
+    await bot.sendMessage(chatId, 'Братан, не удалось обработать фото. Попробуй другое 🤷‍♂️', {
+      reply_to_message_id: msg.message_id,
+    });
+  }
 }
 
 async function handleObserver(chatId) {
@@ -298,24 +338,38 @@ bot.on('message', async (msg) => {
   }
 
   const chatId = msg.chat.id;
+  const userDisplayName = msg.from?.username || msg.from?.first_name || 'unknown';
+  const text = msg.text || msg.caption || '';
+  const isPhoto = Boolean(msg.photo && msg.photo.length > 0);
+  const isPrivate = msg.chat.type === 'private';
 
-  log(`[RAW] chat=${chatId} type=${msg.chat.type} from=${msg.from?.username || msg.from?.first_name} text=${JSON.stringify(msg.text)}`);
+  log(`[RAW] chat=${chatId} type=${msg.chat.type} from=${userDisplayName} text=${JSON.stringify(text)} photo=${isPhoto}`);
 
-  if (!msg.text || msg.from?.is_bot) {
-    log(`[RAW] skipped: no text or from bot`);
+  if (msg.from?.is_bot) {
+    log(`[RAW] skipped: from bot`);
     return;
   }
 
-  const userDisplayName = msg.from.username || msg.from.first_name;
-  const isCommand = msg.text.startsWith('/');
-  const mentioned = isMentioned(msg.text);
+  if (!text && !isPhoto) {
+    log(`[RAW] skipped: no text or photo`);
+    return;
+  }
+
+  const isCommand = text.startsWith('/');
+  const mentioned = isMentioned(text);
   const replyToBot = isReplyToBot(msg);
 
-  log(`[Message] ${userDisplayName} in chat ${chatId}: ${msg.text}`);
-  log(`[Debug] botUsername="${botUsername}" isCommand=${isCommand} isMentioned=${mentioned} isReplyToBot=${replyToBot}`);
+  log(`[Message] ${userDisplayName} in chat ${chatId}: ${text || '[photo]'}`);
+  log(`[Debug] botUsername="${botUsername}" isCommand=${isCommand} isMentioned=${mentioned} isReplyToBot=${replyToBot} isPhoto=${isPhoto}`);
 
-  if (isCommand) {
-    const [command] = msg.text.slice(1).split(' ');
+  // В групповых чатах фото обрабатываем только при явном упоминании или ответе боту.
+  if (isPhoto && !isPrivate && !mentioned && !replyToBot) {
+    log(`[RAW] skipped: photo in group without mention/reply`);
+    return;
+  }
+
+  if (isCommand && !isPhoto) {
+    const [command] = text.slice(1).split(' ');
     const cleanCommand = command.split('@')[0].toLowerCase();
     log(`[Command] /${cleanCommand} from ${userDisplayName}`);
 
@@ -325,7 +379,13 @@ bot.on('message', async (msg) => {
     }
   }
 
-  addMessage(chatId, 'user', truncateMessage(msg.text), userDisplayName);
+  if (isPhoto) {
+    log(`[Photo] Bot received a photo from ${userDisplayName}`);
+    await handlePhotoMessage(msg);
+    return;
+  }
+
+  addMessage(chatId, 'user', truncateMessage(text), userDisplayName);
 
   if (mentioned) {
     log(`[Mention] Bot mentioned by ${userDisplayName}`);

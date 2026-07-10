@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
+const { formatContentForHistory } = require('./utils');
 
 const HISTORY_FILE = path.join(__dirname, '..', 'history.json');
 
@@ -75,16 +76,21 @@ async function saveHistorySync() {
  * Добавляет сообщение в историю чата.
  * @param {number} chatId
  * @param {'user' | 'assistant' | 'system'} role
- * @param {string} text
+ * @param {string | Array<{type: string, text?: string, image_url?: {url: string}}>} content
  * @param {string} [username]
  */
-function addMessage(chatId, role, text, username = '') {
+function addMessage(chatId, role, content, username = '') {
   if (!histories.has(chatId)) {
     histories.set(chatId, []);
   }
 
   const history = histories.get(chatId);
-  history.push({ role, content: text, username: role === 'assistant' ? '' : username, timestamp: Date.now() });
+  history.push({
+    role,
+    content: formatContentForHistory(content),
+    username: role === 'assistant' ? '' : username,
+    timestamp: Date.now(),
+  });
 
   if (history.length > config.maxHistory) {
     history.shift();

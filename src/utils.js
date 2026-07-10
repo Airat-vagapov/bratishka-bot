@@ -48,6 +48,34 @@ function sanitizeUsername(username) {
   return username.replace(/[\n\r]/g, '').slice(0, 64);
 }
 
+/**
+ * Преобразует массив content (текст + изображение) в строку для истории.
+ * @param {string | Array<{type: string, text?: string}>} content
+ * @returns {string}
+ */
+function formatContentForHistory(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return String(content);
+  }
+
+  const hasImage = content.some((part) => part.type === 'image_url');
+  const textParts = content
+    .filter((part) => part.type === 'text' && typeof part.text === 'string' && part.text.trim())
+    .map((part) => part.text.trim());
+
+  const prefix = hasImage ? '[image]' : '';
+  const text = textParts.join(' ');
+
+  if (prefix && text) {
+    return `${prefix} ${text}`;
+  }
+  return prefix || text || '';
+}
+
 module.exports = {
   escapeRegExp,
   buildMentionRegex,
@@ -56,4 +84,5 @@ module.exports = {
   isReplyToBot,
   truncateMessage,
   sanitizeUsername,
+  formatContentForHistory,
 };

@@ -3,13 +3,16 @@ const { log } = require('./logger');
 
 /**
  * Отправляет запрос к OpenRouter API и возвращает текст ответа модели.
- * @param {Array<{role: string, content: string}>} messages
+ * @param {Array<{role: string, content: string | Array<{type: string}>}>} messages
  * @param {Object} [options]
  * @param {number} [options.temperature=0.8]
  * @returns {Promise<string>}
  */
 async function askAI(messages, options = {}) {
-  log(`[OpenRouter] Request to model: ${config.openRouterModel}, messages: ${messages.length}`);
+  const hasImage = messages.some((m) =>
+    Array.isArray(m.content) && m.content.some((part) => part.type === 'image_url')
+  );
+  log(`[OpenRouter] Request to model: ${config.openRouterModel}, messages: ${messages.length}, image: ${hasImage}`);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), config.openRouterRequestTimeout);
