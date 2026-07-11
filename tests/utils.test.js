@@ -4,6 +4,7 @@ import {
   isMentioned,
   removeMention,
   isReplyToBot,
+  buildReplyContext,
   truncateMessage,
   sanitizeUsername,
   formatContentForHistory,
@@ -61,6 +62,54 @@ describe('utils', () => {
     it('returns false without reply or bot id', () => {
       expect(isReplyToBot(null, 123)).toBe(false);
       expect(isReplyToBot({ from: { id: 123 } }, null)).toBe(false);
+    });
+  });
+
+  describe('buildReplyContext', () => {
+    it('returns empty string when message is not a reply', () => {
+      expect(buildReplyContext({ text: 'hello' }, 123)).toBe('');
+    });
+
+    it('returns empty string when reply is to bot itself', () => {
+      const msg = {
+        text: '@botname ответь',
+        reply_to_message: { from: { id: 123, username: 'botname' }, text: 'моё сообщение' },
+      };
+      expect(buildReplyContext(msg, 123)).toBe('');
+    });
+
+    it('builds context for reply to another user text message', () => {
+      const msg = {
+        text: '@botname оцени',
+        reply_to_message: {
+          from: { id: 456, username: 'vasya' },
+          text: 'Вот моя идея',
+        },
+      };
+      expect(buildReplyContext(msg, 123)).toBe(
+        'Сообщение, на которое отвечает пользователь (от @vasya):\nВот моя идея'
+      );
+    });
+
+    it('uses caption when replied message is a media message', () => {
+      const msg = {
+        text: '@botname что на фото',
+        reply_to_message: {
+          from: { id: 456, first_name: 'Петя' },
+          caption: 'смотрите какая картинка',
+        },
+      };
+      expect(buildReplyContext(msg, 123)).toBe(
+        'Сообщение, на которое отвечает пользователь (от @Петя):\nсмотрите какая картинка'
+      );
+    });
+
+    it('returns empty string when replied message has no text or caption', () => {
+      const msg = {
+        text: '@botname оцени',
+        reply_to_message: { from: { id: 456, username: 'vasya' } },
+      };
+      expect(buildReplyContext(msg, 123)).toBe('');
     });
   });
 

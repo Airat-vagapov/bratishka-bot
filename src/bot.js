@@ -4,7 +4,7 @@ const { askAI } = require('./openrouter');
 const { addMessage, getRecentMessages, getMessagesByUser, clearHistory, saveHistorySync } = require('./history');
 const { loadState, isObserverEnabled, setObserver, shouldObserve } = require('./observer');
 const { log } = require('./logger');
-const { truncateMessage } = require('./utils');
+const { truncateMessage, buildReplyContext } = require('./utils');
 const { downloadPhoto, prepareImage, bufferToBase64DataUrl } = require('./vision');
 const { getPersonality, listPersonalities, isValidPersonality } = require('./personalities');
 const { loadState: loadPersonalityState, getChatPersonality, setChatPersonality } = require('./personalityState');
@@ -161,14 +161,22 @@ async function handleDirectMessage(msg, content, mode = 'default') {
 }
 
 async function handleMention(msg) {
-  const text = removeMention(msg.text || msg.caption || '');
+  const replyContext = buildReplyContext(msg, botUserId);
+  let text = removeMention(msg.text || msg.caption || '');
+  if (replyContext) {
+    text = `${replyContext}\n\n${text}`;
+  }
   log(`[Mention] Processing question: "${text}"`);
   await handleDirectMessage(msg, text, 'default');
   log(`[Mention] AI reply sent`);
 }
 
 async function handleReply(msg) {
-  const text = (msg.text || msg.caption || '').trim();
+  const replyContext = buildReplyContext(msg, botUserId);
+  let text = (msg.text || msg.caption || '').trim();
+  if (replyContext) {
+    text = `${replyContext}\n\n${text}`;
+  }
   log(`[Reply] Processing reply: "${text}"`);
   await handleDirectMessage(msg, text, 'default');
   log(`[Reply] AI reply sent`);

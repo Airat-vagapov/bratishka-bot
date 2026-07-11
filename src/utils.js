@@ -34,6 +34,33 @@ function isReplyToBot(replyMessage, botUserId) {
   return Number(replyMessage.from.id) === Number(botUserId);
 }
 
+/**
+ * Формирует контекст сообщения, на которое отвечает пользователь.
+ * Возвращает пустую строку, если ответа нет или ответ дан на сообщение бота
+ * (чтобы не дублировать контекст из истории).
+ * @param {Object} msg
+ * @param {number | string | null} botUserId
+ * @returns {string}
+ */
+function buildReplyContext(msg, botUserId) {
+  if (!msg || !msg.reply_to_message) {
+    return '';
+  }
+
+  const reply = msg.reply_to_message;
+  if (isReplyToBot(reply, botUserId)) {
+    return '';
+  }
+
+  const text = reply.text || reply.caption || '';
+  if (!text) {
+    return '';
+  }
+
+  const author = reply.from?.username || reply.from?.first_name || 'unknown';
+  return `Сообщение, на которое отвечает пользователь (от @${author}):\n${text}`;
+}
+
 function truncateMessage(text, maxLength = config.maxMessageLength) {
   if (!text || text.length <= maxLength) {
     return text;
@@ -95,6 +122,7 @@ module.exports = {
   isMentioned,
   removeMention,
   isReplyToBot,
+  buildReplyContext,
   truncateMessage,
   sanitizeUsername,
   formatContentForHistory,
