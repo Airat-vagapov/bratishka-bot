@@ -3,7 +3,7 @@ const path = require('path');
 const config = require('./config');
 const { formatContentForHistory } = require('./utils');
 
-const HISTORY_FILE = path.join(__dirname, '..', 'history.json');
+const HISTORY_FILE = path.join(config.dataDirectory, 'history.json');
 
 /** @type {Map<number, Array<{role: string, content: string, username: string, timestamp: number}>>} */
 const histories = new Map();

@@ -21,17 +21,17 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y git curl nano
 ```
 
-## 3. Установи Node.js 20 LTS
+## 3. Установи Node.js 22 LTS
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
 Проверь версии:
 
 ```bash
-node -v   # должно быть v20.x.x
+node -v   # должно быть v22.13.0 или новее (либо v24+)
 npm -v    # должно быть 10.x.x
 ```
 

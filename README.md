@@ -13,7 +13,7 @@ Telegram-бот с ИИ-интеграцией через [OpenRouter API](https
 
 ## Стек
 
-- Node.js 18+
+- Node.js 22.13+ или 24+
 - [node-telegram-bot-api](https://github.com/yagop/node-telegram-bot-api)
 - OpenRouter API (совместимый с OpenAI chat completions)
 

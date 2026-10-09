@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 
 const required = ['TELEGRAM_BOT_TOKEN', 'OPENROUTER_API_KEY'];
 
@@ -14,6 +15,7 @@ function parseIntEnv(value, defaultValue) {
 }
 
 module.exports = {
+  dataDirectory: process.env.BOT_DATA_DIR || path.resolve(__dirname, '..'),
   telegramToken: process.env.TELEGRAM_BOT_TOKEN,
   openRouterApiKey: process.env.OPENROUTER_API_KEY,
   openRouterModel: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',

@@ -2,13 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-const STATE_FILE = path.join(process.cwd(), 'observer-state.json');
+const STATE_FILE = path.join(process.env.BOT_DATA_DIR, 'observer-state.json');
 
 function resetStateFile() {
   fs.writeFileSync(STATE_FILE, '{}');
 }
 
-import { loadState, isObserverEnabled, setObserver, shouldObserve } from '../src/observer.js';
+import { loadState, isObserverEnabled, getObserverGeneration, setObserver, shouldObserve } from '../src/observer.js';
 
 describe('observer', () => {
   beforeEach(() => {
@@ -29,6 +29,18 @@ describe('observer', () => {
     expect(isObserverEnabled(1)).toBe(true);
     setObserver(1, false);
     expect(isObserverEnabled(1)).toBe(false);
+  });
+
+  it('changes the observer generation when its state changes', () => {
+    setObserver(1, true);
+    const enabledGeneration = getObserverGeneration(1);
+
+    setObserver(1, true);
+    expect(getObserverGeneration(1)).toBe(enabledGeneration);
+
+    setObserver(1, false);
+
+    expect(getObserverGeneration(1)).toBe(enabledGeneration + 1);
   });
 
   it('triggers observer after interval messages', () => {

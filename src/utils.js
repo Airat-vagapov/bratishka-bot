@@ -38,7 +38,39 @@ function truncateMessage(text, maxLength = config.maxMessageLength) {
   if (!text || text.length <= maxLength) {
     return text;
   }
-  return `${text.slice(0, maxLength)}…`;
+  const safeMaxLength = Math.max(1, Math.min(maxLength, 4096));
+  let end = safeMaxLength - 1;
+  if (end > 0 && text.charCodeAt(end - 1) >= 0xd800 && text.charCodeAt(end - 1) <= 0xdbff) {
+    end--;
+  }
+  return `${text.slice(0, end)}…`;
+}
+
+function splitMessage(text, maxLength = config.maxMessageLength) {
+  if (!text.trim()) {
+    return [];
+  }
+
+  const safeMaxLength = Math.max(2, Math.min(maxLength, 4096));
+  const chunks = [];
+  let offset = 0;
+
+  while (offset < text.length) {
+    let end = Math.min(offset + safeMaxLength, text.length);
+    const lastCodeUnit = text.charCodeAt(end - 1);
+    const nextCodeUnit = text.charCodeAt(end);
+    const splitsSurrogatePair = lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff
+      && nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff;
+
+    if (splitsSurrogatePair) {
+      end--;
+    }
+
+    chunks.push(text.slice(offset, end));
+    offset = end;
+  }
+
+  return chunks;
 }
 
 function sanitizeUsername(username) {
@@ -83,6 +115,7 @@ module.exports = {
   removeMention,
   isReplyToBot,
   truncateMessage,
+  splitMessage,
   sanitizeUsername,
   formatContentForHistory,
 };

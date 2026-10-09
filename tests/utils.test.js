@@ -5,6 +5,7 @@ import {
   removeMention,
   isReplyToBot,
   truncateMessage,
+  splitMessage,
   sanitizeUsername,
   formatContentForHistory,
 } from '../src/utils.js';
@@ -70,7 +71,35 @@ describe('utils', () => {
 
     it('truncates long messages', () => {
       const long = 'a'.repeat(200);
-      expect(truncateMessage(long, 100)).toBe('a'.repeat(100) + '…');
+      expect(truncateMessage(long, 100)).toBe('a'.repeat(99) + '…');
+    });
+
+    it('does not leave a dangling surrogate when truncating', () => {
+      expect(truncateMessage(`${'a'.repeat(98)}😀z`, 100)).toBe(`${'a'.repeat(98)}…`);
+    });
+  });
+
+  describe('splitMessage', () => {
+    it('respects the exact Telegram message boundaries', () => {
+      expect(splitMessage('a'.repeat(4095)).map((chunk) => chunk.length)).toEqual([4095]);
+      expect(splitMessage('a'.repeat(4096)).map((chunk) => chunk.length)).toEqual([4096]);
+      expect(splitMessage('a'.repeat(4097)).map((chunk) => chunk.length)).toEqual([4096, 1]);
+    });
+
+    it('splits long text into Telegram-sized messages', () => {
+      const chunks = splitMessage('a'.repeat(8193));
+
+      expect(chunks.map((chunk) => chunk.length)).toEqual([4096, 4096, 1]);
+    });
+
+    it('does not split surrogate pairs at Telegram length boundaries', () => {
+      const chunks = splitMessage(`${'a'.repeat(4095)}😀b`);
+
+      expect(chunks).toEqual(['a'.repeat(4095), '😀b']);
+    });
+
+    it('returns no chunks for whitespace-only responses', () => {
+      expect(splitMessage(' \n\t')).toEqual([]);
     });
   });
 

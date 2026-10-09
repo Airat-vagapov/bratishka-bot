@@ -2,13 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 
-const STATE_FILE = path.join(__dirname, '..', 'observer-state.json');
+const STATE_FILE = path.join(config.dataDirectory, 'observer-state.json');
 
 /**
  * @typedef {Object} ChatObserverState
  * @property {boolean} enabled
  * @property {number} messageCount
  * @property {number} [lastObservationAt]
+ * @property {number} [generation]
  */
 
 /** @type {Object.<number, ChatObserverState>} */
@@ -59,11 +60,18 @@ function isObserverEnabled(chatId) {
  */
 function setObserver(chatId, enabled) {
   const state = getChatState(chatId);
+  if (state.enabled !== enabled) {
+    state.generation = (state.generation || 0) + 1;
+  }
   state.enabled = enabled;
   if (!enabled) {
     state.messageCount = 0;
   }
   saveState();
+}
+
+function getObserverGeneration(chatId) {
+  return getChatState(chatId).generation || 0;
 }
 
 /**
@@ -93,4 +101,4 @@ function shouldObserve(chatId, interval) {
   return true;
 }
 
-module.exports = { loadState, isObserverEnabled, setObserver, shouldObserve };
+module.exports = { loadState, isObserverEnabled, getObserverGeneration, setObserver, shouldObserve };
