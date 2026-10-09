@@ -11,7 +11,7 @@ describe('OpenRouter client', () => {
     const messages = [{ role: 'user', content: 'hello' }];
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '  answer  ' } }] }),
+      json: async () => ({ choices: [{ message: { content: '  **answer**  ' } }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 

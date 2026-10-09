@@ -1,5 +1,6 @@
 const config = require('./config');
 const { log } = require('./logger');
+const { sanitizeAnswer } = require('./utils');
 
 /**
  * Отправляет запрос к OpenRouter API и возвращает текст ответа модели.
@@ -52,7 +53,7 @@ async function askAI(messages, options = {}) {
       throw new Error('OpenRouter returned null content in response');
     }
 
-    return content.trim();
+    return sanitizeAnswer(content.trim());
   } finally {
     clearTimeout(timeoutId);
   }
