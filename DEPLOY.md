@@ -92,6 +92,9 @@ OPENROUTER_API_KEY=your_openrouter_api_key
 OPENROUTER_MODEL=openai/gpt-4o-mini
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_REQUEST_TIMEOUT=30000
+# Необязательно: бесплатный ключ Tavily без подключённого Pay As You Go
+TAVILY_API_KEY=
+TAVILY_MONTHLY_LIMIT=900
 OBSERVER_INTERVAL=10
 OBSERVER_CONTEXT_LIMIT=10
 OBSERVER_MIN_INTERVAL_MS=30000

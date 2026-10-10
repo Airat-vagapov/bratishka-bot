@@ -14,6 +14,11 @@ function parseIntEnv(value, defaultValue) {
   return Number.isNaN(parsed) ? defaultValue : parsed;
 }
 
+const tavilyMonthlyLimit = Number(process.env.TAVILY_MONTHLY_LIMIT || 900);
+if (!Number.isInteger(tavilyMonthlyLimit) || tavilyMonthlyLimit < 0 || tavilyMonthlyLimit > 1000) {
+  throw new Error('TAVILY_MONTHLY_LIMIT must be an integer between 0 and 1000');
+}
+
 module.exports = {
   dataDirectory: process.env.BOT_DATA_DIR || path.resolve(__dirname, '..'),
   telegramToken: process.env.TELEGRAM_BOT_TOKEN,
@@ -21,6 +26,8 @@ module.exports = {
   openRouterModel: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
   openRouterBaseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
   openRouterRequestTimeout: parseIntEnv(process.env.OPENROUTER_REQUEST_TIMEOUT, 30000),
+  tavilyApiKey: (process.env.TAVILY_API_KEY || '').trim(),
+  tavilyMonthlyLimit,
   observerInterval: parseIntEnv(process.env.OBSERVER_INTERVAL, 10),
   observerContextLimit: parseIntEnv(process.env.OBSERVER_CONTEXT_LIMIT, 10),
   observerMinIntervalMs: parseIntEnv(process.env.OBSERVER_MIN_INTERVAL_MS, 30000),

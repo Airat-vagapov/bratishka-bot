@@ -3,6 +3,8 @@ node_modules/
 observer-state.json
 personality-state.json
 history.json
+tavily-usage.json
+tavily-usage.json.*.tmp
 *.log
 .DS_Store
 coverage/

@@ -104,6 +104,7 @@ describe('bot message handling', () => {
     expect(askAI.mock.calls[0][0].filter((entry) => entry.role === 'user')).toEqual([
       { role: 'user', content: 'hello' },
     ]);
+    expect(askAI.mock.calls[0][1]).toEqual({ webSearch: true });
   });
 
   it('recognizes replies to the bot and keeps one user message in context', async () => {
@@ -117,6 +118,7 @@ describe('bot message handling', () => {
     expect(askAI.mock.calls[0][0].filter((entry) => entry.role === 'user')).toEqual([
       { role: 'user', content: 'follow up' },
     ]);
+    expect(askAI.mock.calls[0][1]).toEqual({ webSearch: true });
   });
 
   it('ignores a command addressed to another bot and still handles its own command', async () => {

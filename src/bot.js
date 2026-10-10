@@ -138,7 +138,7 @@ async function handleDirectMessage(msg, content, mode = 'default') {
   ];
 
   try {
-    const reply = await askAI(messages);
+    const reply = await askAI(messages, { webSearch: mode === 'default' && !isArrayContent });
     await sendTelegramMessage(chatId, reply, { reply_to_message_id: msg.message_id });
     addMessage(chatId, 'assistant', reply);
   } catch (error) {
