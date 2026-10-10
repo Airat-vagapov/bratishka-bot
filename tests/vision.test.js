@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import sharp from 'sharp';
 
 vi.mock('../src/config.js', () => ({
   default: {
@@ -42,16 +43,22 @@ describe('vision', () => {
   });
 
   describe('prepareImage', () => {
-    it('resizes and converts image to jpeg', async () => {
-      const input = createSvgBuffer(2000, 1000);
+    it.each([
+      [2000, 1000, 1024, 512],
+      [1000, 2000, 512, 1024],
+      [320, 240, 320, 240],
+    ])('converts %ix%i to a %ix%i JPEG without enlargement', async (width, height, expectedWidth, expectedHeight) => {
+      const input = createSvgBuffer(width, height);
       const result = await prepareImage(input);
+      const metadata = await sharp(result).metadata();
 
       expect(result).toBeInstanceOf(Buffer);
       expect(result.length).toBeGreaterThan(0);
-      // JPEG magic bytes
-      expect(result[0]).toBe(0xff);
-      expect(result[1]).toBe(0xd8);
-      expect(result[2]).toBe(0xff);
+      expect(metadata).toMatchObject({
+        format: 'jpeg',
+        width: expectedWidth,
+        height: expectedHeight,
+      });
     });
 
     it('throws on invalid image', async () => {
