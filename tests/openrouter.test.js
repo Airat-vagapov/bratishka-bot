@@ -109,7 +109,7 @@ describe('OpenRouter client', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(askAI([{ role: 'user', content: 'Explain photosynthesis' }], { webSearch: true })).resolves.toBe('General knowledge');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ tool_choice: 'auto', parallel_tool_calls: false });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ tool_choice: 'auto' });
     expect(fs.existsSync(path.join(config.dataDirectory, 'tavily-usage.json'))).toBe(false);
   });
 
@@ -126,7 +126,8 @@ describe('OpenRouter client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1][0]).toBe('https://api.tavily.com/search');
     const finalBody = JSON.parse(fetchMock.mock.calls[2][1].body);
-    expect(finalBody.tool_choice).toBe('none');
+    expect(finalBody).not.toHaveProperty('tools');
+    expect(finalBody).not.toHaveProperty('tool_choice');
     expect(finalBody.messages).toContainEqual(assistant);
     const result = finalBody.messages.find((entry) => entry.role === 'tool');
     expect(result.tool_call_id).toBe('call_search');

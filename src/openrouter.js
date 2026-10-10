@@ -57,7 +57,7 @@ async function askAI(messages, options = {}) {
   const enableSearch = options.webSearch === true && Boolean(config.tavilyApiKey) && config.tavilyMonthlyLimit > 0;
   const conversation = enableSearch ? [{ role: 'system', content: searchInstructions() }, ...messages] : [...messages];
 
-  async function complete(toolChoice = 'auto') {
+  async function complete({ exposeSearchTool = true, toolChoice = 'auto' } = {}) {
     const response = await fetch(`${config.openRouterBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -71,11 +71,9 @@ async function askAI(messages, options = {}) {
         messages: conversation,
         temperature: options.temperature ?? 0.8,
         max_tokens: config.openRouterMaxTokens,
-        ...(enableSearch ? {
+        ...(enableSearch && exposeSearchTool ? {
           tools: [SEARCH_TOOL],
           tool_choice: toolChoice,
-          parallel_tool_calls: false,
-          provider: { require_parameters: true },
         } : {}),
       }),
       signal: controller.signal,
@@ -142,7 +140,7 @@ async function askAI(messages, options = {}) {
         }
         conversation.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
       }
-      message = await complete('none');
+      message = await complete({ exposeSearchTool: false });
       if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
         throw new Error('OpenRouter requested tools after the search limit');
       }
