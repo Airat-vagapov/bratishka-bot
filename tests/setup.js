@@ -5,7 +5,8 @@ const testDataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), `bratishka-bot-t
 
 process.env.BOT_DATA_DIR = testDataDirectory;
 afterAll(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  const history = require.cache[require.resolve('../src/history.js')];
+  if (history) await history.exports.saveHistorySync();
   fs.rmSync(testDataDirectory, { recursive: true, force: true });
 });
 

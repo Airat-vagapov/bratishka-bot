@@ -1,23 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-vi.mock('fs', () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  promises: {
-    writeFile: vi.fn(() => Promise.resolve()),
-  },
-}));
-
-import { addMessage, getRecentMessages, getMessagesByUser, clearHistory, saveHistorySync } from '../src/history.js';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const fs = require('node:fs');
+const path = require('node:path');
+const { addMessage, getRecentMessages, getMessagesByUser, clearHistory, saveHistorySync } = require('../src/history.js');
+const target = path.join(process.env.BOT_DATA_DIR, 'history.json');
+const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 describe('history', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     clearHistory(1);
+    clearHistory(2);
+    await saveHistorySync();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    vi.restoreAllMocks();
     clearHistory(1);
+    clearHistory(2);
+    await saveHistorySync();
+    vi.useRealTimers();
   });
 
   it('adds user and assistant messages', () => {
@@ -61,6 +68,108 @@ describe('history', () => {
   it('saves history synchronously', async () => {
     addMessage(1, 'user', 'hello', 'u');
     await saveHistorySync();
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))[1]).toEqual([
+      { role: 'user', content: 'hello', username: 'u', timestamp: expect.any(Number) },
+    ]);
+  });
+
+  it.each(['write', 'rename'])('joins both callers through mutations during %s', async (phase) => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    const latest = deferred();
+    let active = 0;
+    let maxActive = 0;
+    let writes = 0;
+    let renames = 0;
+    const snapshots = [];
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (_file, data) => {
+      maxActive = Math.max(maxActive, ++active);
+      snapshots.push(JSON.parse(data));
+      if (++writes === 1 && phase === 'write') await gate.promise;
+    });
+    vi.spyOn(fs.promises, 'rename').mockImplementation(async () => {
+      if (++renames === 1 && phase === 'rename') await gate.promise;
+      if (renames === 2) await latest.promise;
+      active--;
+    });
+    addMessage(1, 'user', 'stale', 'u');
+    let settled = 0;
+    const first = saveHistorySync().then(() => { settled++; });
+    await tick();
+    clearHistory(1);
+    addMessage(2, 'assistant', 'latest');
+    const second = saveHistorySync().then(() => { settled++; });
+    await tick();
+    const beforeRelease = settled;
+    gate.resolve();
+    await tick();
+    const beforeLatestPublish = settled;
+    latest.resolve();
+    await Promise.all([first, second]);
+    expect(beforeRelease).toBe(0);
+    expect(beforeLatestPublish).toBe(0);
+    expect(maxActive).toBe(1);
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots[1][1]).toBeUndefined();
+    expect(snapshots[1][2][0].content).toBe('latest');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['writeFile', 'rename'])('preserves old bytes and retries after %s failure', async (method) => {
+    const old = fs.readFileSync(target, 'utf8');
+    const failure = new Error(`${method} failure`);
+    const spy = vi.spyOn(fs.promises, method).mockRejectedValueOnce(failure);
+    const cleanup = vi.spyOn(fs.promises, 'unlink').mockRejectedValueOnce(new Error('cleanup failure'));
+    addMessage(1, 'user', 'retry me', 'u');
+    const result = await saveHistorySync().then(() => null, (error) => error);
+    expect(spy).toHaveBeenCalledOnce();
+    expect(result).toBe(failure);
+    expect(fs.readFileSync(target, 'utf8')).toBe(old);
+    expect(cleanup).toHaveBeenCalledOnce();
+    spy.mockRestore();
+    cleanup.mockRestore();
+    await saveHistorySync();
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))[1][0].content).toBe('retry me');
+  });
+
+  it('joins a failed background writer and delays its retry without overlap', async () => {
+    vi.useFakeTimers();
+    const gate = deferred();
+    const failure = new Error('background failure');
+    const realWrite = fs.promises.writeFile;
+    const write = vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(async () => {
+      await gate.promise;
+      throw failure;
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    addMessage(1, 'user', 'latest', 'u');
+    await vi.advanceTimersByTimeAsync(1);
+    const joined = saveHistorySync().then(() => null, (error) => error);
+    addMessage(2, 'assistant', 'overlap');
+    await vi.advanceTimersByTimeAsync(10);
+    const writesWhileBlocked = write.mock.calls.length;
+    gate.resolve();
+    const error = await joined;
+    await tick();
+    expect(writesWhileBlocked).toBe(1);
+    expect(error).toBe(failure);
+    expect(console.error).toHaveBeenCalledWith('Failed to save history file:', failure);
+    expect(vi.getTimerCount()).toBe(1);
+    const retryGate = deferred();
+    write.mockImplementationOnce(async (...args) => {
+      await retryGate.promise;
+      return realWrite(...args);
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    addMessage(1, 'user', 'during retry', 'u');
+    const flush = saveHistorySync();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(write).toHaveBeenCalledTimes(2);
+    retryGate.resolve();
+    await flush;
+    expect(write).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))[1].at(-1).content).toBe('during retry');
   });
 
   describe('getMessagesByUser', () => {

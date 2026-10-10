@@ -8,7 +8,9 @@ const HISTORY_FILE = path.join(config.dataDirectory, 'history.json');
 /** @type {Map<number, Array<{role: string, content: string, username: string, timestamp: number}>>} */
 const histories = new Map();
 let saveTimeout = null;
-let isSaving = false;
+let writer = null;
+let dirty = false;
+const TEMP_HISTORY_FILE = `${HISTORY_FILE}.${process.pid}.tmp`;
 
 function loadHistory() {
   if (!fs.existsSync(HISTORY_FILE)) {
@@ -33,42 +35,59 @@ function loadHistory() {
 }
 
 function scheduleSaveHistory() {
-  if (saveTimeout) {
+  if (saveTimeout || writer) {
     return;
   }
 
   saveTimeout = setTimeout(() => {
     saveTimeout = null;
-    flushHistory();
+    flushHistory().catch((error) => {
+      console.error('Failed to save history file:', error);
+    });
   }, config.historySaveIntervalMs);
 }
 
-async function flushHistory() {
-  if (isSaving) {
-    scheduleSaveHistory();
-    return;
-  }
-
-  isSaving = true;
-  try {
-    const data = Object.fromEntries(histories);
-    await fs.promises.writeFile(HISTORY_FILE, JSON.stringify(data, null, 2));
-  } catch (error) {
-    console.error('Failed to save history file:', error);
-  } finally {
-    isSaving = false;
-  }
-}
-
-/**
- * Сохраняет историю синхронно. Использовать только при graceful shutdown.
- * @returns {Promise<void>}
- */
-async function saveHistorySync() {
+function flushHistory() {
   if (saveTimeout) {
     clearTimeout(saveTimeout);
     saveTimeout = null;
   }
+  if (writer) {
+    return writer;
+  }
+  if (!dirty) {
+    return Promise.resolve();
+  }
+
+  writer = Promise.resolve().then(async () => {
+    try {
+      while (dirty) {
+        dirty = false;
+        const snapshot = JSON.stringify(Object.fromEntries(histories), null, 2);
+        await fs.promises.writeFile(TEMP_HISTORY_FILE, snapshot);
+        await fs.promises.rename(TEMP_HISTORY_FILE, HISTORY_FILE);
+      }
+    } catch (error) {
+      dirty = true;
+      try {
+        await fs.promises.unlink(TEMP_HISTORY_FILE);
+      } catch {
+        // Preserve the publication error even when temporary-file cleanup fails.
+      }
+      throw error;
+    } finally {
+      writer = null;
+      if (dirty) scheduleSaveHistory();
+    }
+  });
+  return writer;
+}
+
+/**
+ * Дожидается публикации всей текущей истории, включая изменения во время записи.
+ * @returns {Promise<void>}
+ */
+async function saveHistorySync() {
   await flushHistory();
 }
 
@@ -96,6 +115,7 @@ function addMessage(chatId, role, content, username = '') {
     history.shift();
   }
 
+  dirty = true;
   scheduleSaveHistory();
 }
 
@@ -150,6 +170,7 @@ function getMessagesByUser(chatId, username, limit = 10) {
  */
 function clearHistory(chatId) {
   histories.delete(chatId);
+  dirty = true;
   scheduleSaveHistory();
 }
 
