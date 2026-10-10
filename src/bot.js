@@ -14,6 +14,24 @@ const bot = new TelegramBot(config.telegramToken, { polling: false });
 let botUsername = config.botUsername;
 let botUserId = null;
 let isShuttingDown = false;
+let initialization = null;
+let shutdownPromise = null;
+const activeMessageHandlers = new Set();
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 40_000;
+const SHUTDOWN_HISTORY_TIMEOUT_MS = 5_000;
+
+function waitWithTimeout(promise, timeoutMs, label) {
+  let timeoutId;
+  const observed = Promise.resolve(promise);
+  observed.catch(() => {});
+
+  return Promise.race([
+    observed,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timeoutId));
+}
 
 async function sendTelegramMessage(chatId, text, options = {}) {
   const chunks = splitMessage(text);
@@ -435,17 +453,20 @@ async function handleMessage(msg) {
   }
 }
 
-bot.on('message', (msg) =>
-  handleMessage(msg).catch((error) => {
+bot.on('message', (msg) => {
+  const task = handleMessage(msg).catch((error) => {
     console.error('Error processing Telegram message:', error);
-  })
-);
+  });
+  activeMessageHandlers.add(task);
+  task.finally(() => activeMessageHandlers.delete(task));
+  return task;
+});
 
 bot.on('polling_error', (error) => {
   console.error('Polling error:', error);
 });
 
-async function init() {
+async function startBot() {
   loadState();
   loadPersonalityState();
 
@@ -458,38 +479,79 @@ async function init() {
     throw error;
   }
 
+  if (isShuttingDown) {
+    return bot;
+  }
+
   await bot.startPolling();
+  if (isShuttingDown) {
+    await bot.stopPolling({ cancel: true });
+    return bot;
+  }
 
   console.log(`Bratishka bot started: @${botUsername}`);
   console.log(`DEBUG mode: ${config.debug ? 'ON' : 'OFF'}`);
   return bot;
 }
 
-async function shutdown() {
-  if (isShuttingDown) {
-    return;
+function init() {
+  if (!initialization) {
+    initialization = startBot();
   }
-  isShuttingDown = true;
+  return initialization;
+}
 
+async function performShutdown() {
   console.log('Shutting down gracefully...');
 
+  const pendingWork = [
+    Promise.resolve().then(() => bot.stopPolling({ cancel: true })),
+    ...(initialization ? [initialization] : []),
+    ...activeMessageHandlers,
+  ];
+
+  let shutdownError = null;
   try {
-    await bot.stopPolling();
+    const outcomes = await waitWithTimeout(
+      Promise.allSettled(pendingWork),
+      SHUTDOWN_DRAIN_TIMEOUT_MS,
+      'Polling and handler drain'
+    );
+    const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+    if (failure) {
+      shutdownError = failure.reason;
+    }
   } catch (error) {
-    console.error('Error stopping polling:', error);
+    shutdownError = error;
+    console.error('Error draining bot work:', error);
   }
 
   try {
-    await saveHistorySync();
+    await waitWithTimeout(
+      Promise.resolve().then(() => saveHistorySync()),
+      SHUTDOWN_HISTORY_TIMEOUT_MS,
+      'Final history save'
+    );
   } catch (error) {
     console.error('Error saving history:', error);
+    shutdownError ||= error;
+  }
+
+  if (shutdownError) {
+    throw shutdownError;
   }
 
   console.log('Shutdown complete.');
-  process.exit(0);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+function shutdown() {
+  if (shutdownPromise) {
+    return shutdownPromise;
+  }
+
+  isShuttingDown = true;
+  shutdownPromise = performShutdown();
+  return shutdownPromise;
+}
 
 module.exports = { init, shutdown };

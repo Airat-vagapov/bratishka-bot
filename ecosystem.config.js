@@ -4,6 +4,7 @@ module.exports = {
       name: 'bratishka-bot',
       script: './src/index.js',
       instances: 1,
+      kill_timeout: 50000,
       autorestart: true,
       watch: false,
       max_memory_restart: '512M',
